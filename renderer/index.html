@@ -14,58 +14,80 @@
       <img src="assets/icon.png" alt="" class="brand-icon">
       <div>
         <h1>Grabbit</h1>
-        <p class="tagline">Paste a link. Grab the file.</p>
+        <p class="tagline" data-i18n="tagline"></p>
       </div>
     </div>
-    <button id="helpBtn" class="btn ghost help-btn" type="button" title="How to use Grabbit (F1)">
-      <span class="help-q" aria-hidden="true">?</span> How to use
-    </button>
+    <div class="top-actions">
+      <button id="discordBtn" class="btn ghost top-btn hidden" type="button" data-i18n-title="top.discordTitle">
+        <span class="top-icon" aria-hidden="true">💬</span> <span data-i18n="top.discord"></span>
+      </button>
+      <button id="settingsBtn" class="btn ghost top-btn" type="button" data-i18n-title="top.settings">
+        <span class="top-icon" aria-hidden="true">⚙</span> <span data-i18n="top.settings"></span>
+      </button>
+      <button id="helpBtn" class="btn ghost top-btn" type="button" data-i18n-title="top.helpTitle">
+        <span class="top-icon help-q" aria-hidden="true">?</span> <span data-i18n="top.help"></span>
+      </button>
+    </div>
   </header>
 
   <main class="layout">
     <!-- ============ Grab panel ============ -->
     <section class="panel grab" aria-label="Grab a video">
-      <label class="field-label" for="url">Video link</label>
+      <label class="field-label" for="url" data-i18n="url.label"></label>
       <div class="url-row">
-        <input id="url" type="text" spellcheck="false" autocomplete="off"
-               placeholder="https://www.youtube.com/watch?v=…">
-        <button id="pasteBtn" class="btn ghost" type="button" title="Paste from clipboard">Paste</button>
+        <input id="url" type="text" spellcheck="false" autocomplete="off" data-i18n-placeholder="url.placeholder">
+        <button id="pasteBtn" class="btn ghost" type="button" data-i18n="url.paste" data-i18n-title="url.pasteTitle"></button>
       </div>
       <label id="playlistRow" class="check hidden">
         <input id="playlist" type="checkbox">
-        <span>This link is part of a playlist. Grab the <strong>whole playlist</strong>.</span>
+        <span data-i18n-html="playlist.text"></span>
       </label>
 
       <div id="preview" class="preview empty" aria-live="polite">
         <div class="preview-thumb"><img id="thumb" alt=""></div>
         <div class="preview-body">
-          <p id="previewTitle" class="preview-title">Paste a link to see the video here</p>
-          <p id="previewMeta" class="preview-meta">YouTube and most other video sites work</p>
+          <p id="previewTitle" class="preview-title"></p>
+          <p id="previewMeta" class="preview-meta"></p>
         </div>
       </div>
 
-      <span class="field-label">Format</span>
+      <span class="field-label" data-i18n="format.label"></span>
       <div class="segmented" role="radiogroup" aria-label="Format">
         <button type="button" role="radio" data-mode="mp4" class="seg">
-          <span class="seg-title">MP4</span><span class="seg-sub">Video</span>
+          <span class="seg-title">MP4</span><span class="seg-sub" data-i18n="format.mp4"></span>
         </button>
         <button type="button" role="radio" data-mode="mp3" class="seg">
-          <span class="seg-title">MP3</span><span class="seg-sub">Audio</span>
+          <span class="seg-title">MP3</span><span class="seg-sub" data-i18n="format.mp3"></span>
         </button>
         <button type="button" role="radio" data-mode="wav" class="seg">
-          <span class="seg-title">WAV</span><span class="seg-sub">Lossless audio</span>
+          <span class="seg-title">WAV</span><span class="seg-sub" data-i18n="format.wav"></span>
         </button>
       </div>
 
       <div class="options">
         <div id="qualityWrap" class="option">
-          <label class="field-label" for="quality">Quality</label>
+          <label class="field-label" for="quality" data-i18n="quality.label"></label>
           <select id="quality"></select>
         </div>
         <label id="editorRow" class="check">
           <input id="editorFriendly" type="checkbox">
-          <span>Editor-friendly (H.264)
-            <small>Plays nicely in Premiere, CapCut and Vegas. YouTube only offers H.264 up to 1080p.</small>
+          <span><span data-i18n="editor.text"></span>
+            <small data-i18n="editor.hint"></small>
+          </span>
+        </label>
+      </div>
+
+      <div class="extras">
+        <label class="check">
+          <input id="saveThumb" type="checkbox">
+          <span><span data-i18n="thumb.save"></span>
+            <small data-i18n="thumb.saveHint"></small>
+          </span>
+        </label>
+        <label id="embedRow" class="check">
+          <input id="embedCover" type="checkbox">
+          <span><span data-i18n="thumb.embed"></span>
+            <small id="embedHint"></small>
           </span>
         </label>
       </div>
@@ -73,16 +95,16 @@
       <div id="trimBlock" class="trim">
         <label class="check">
           <input id="trimEnabled" type="checkbox">
-          <span>Only grab a part <small>Great for sound effects and short clips</small></span>
+          <span><span data-i18n="trim.text"></span> <small data-i18n="trim.hint"></small></span>
         </label>
         <div id="trimFields" class="trim-fields hidden">
           <div class="option">
-            <label class="field-label" for="start">From</label>
+            <label class="field-label" for="start" data-i18n="trim.from"></label>
             <input id="start" type="text" placeholder="0:30" inputmode="numeric">
           </div>
           <span class="trim-arrow" aria-hidden="true">→</span>
           <div class="option">
-            <label class="field-label" for="end">To</label>
+            <label class="field-label" for="end" data-i18n="trim.to"></label>
             <input id="end" type="text" placeholder="0:45" inputmode="numeric">
           </div>
         </div>
@@ -90,111 +112,138 @@
 
       <div class="save-row">
         <div class="save-info">
-          <span class="field-label">Save to</span>
+          <span class="field-label" data-i18n="save.label"></span>
           <span id="outputDir" class="path" title=""></span>
         </div>
-        <button id="changeFolder" class="btn ghost small" type="button">Change</button>
-        <button id="openFolder" class="btn ghost small" type="button">Open</button>
+        <button id="changeFolder" class="btn ghost small" type="button" data-i18n="save.change"></button>
+        <button id="openFolder" class="btn ghost small" type="button" data-i18n="save.open"></button>
       </div>
 
       <p id="formError" class="form-error hidden" role="alert"></p>
-      <button id="grabBtn" class="btn primary big" type="button">Grab it</button>
+      <button id="grabBtn" class="btn primary big" type="button"></button>
     </section>
 
     <!-- ============ Downloads panel ============ -->
     <section class="panel side" aria-label="Downloads">
       <div class="tabs" role="tablist">
-        <button type="button" role="tab" class="tab active" data-tab="active">Downloads <span id="activeCount" class="count hidden">0</span></button>
-        <button type="button" role="tab" class="tab" data-tab="history">History</button>
+        <button type="button" role="tab" class="tab active" data-tab="active"><span data-i18n="tab.downloads"></span> <span id="activeCount" class="count hidden">0</span></button>
+        <button type="button" role="tab" class="tab" data-tab="history" data-i18n="tab.history"></button>
       </div>
       <div id="tab-active" class="tab-body">
         <ul id="jobList" class="job-list"></ul>
         <div id="jobsEmpty" class="empty-state">
-          <p>Nothing downloading yet.</p>
-          <p class="muted">You can start more than one grab at a time.</p>
+          <p data-i18n="jobs.empty"></p>
+          <p id="jobsEmptyHint" class="muted"></p>
         </div>
       </div>
       <div id="tab-history" class="tab-body hidden">
         <ul id="historyList" class="job-list"></ul>
-        <div id="historyEmpty" class="empty-state"><p>No finished downloads yet.</p></div>
-        <button id="clearHistory" class="btn ghost small hidden" type="button">Clear history</button>
+        <div id="historyEmpty" class="empty-state"><p data-i18n="hist.empty"></p></div>
+        <button id="clearHistory" class="btn ghost small hidden" type="button" data-i18n="hist.clear"></button>
       </div>
     </section>
   </main>
 
   <footer class="statusbar">
-    <span id="ytdlpStatus">yt-dlp: starting…</span>
-    <button id="updateBtn" class="link" type="button">Update yt-dlp</button>
+    <span id="ytdlpStatus"></span>
+    <button id="updateBtn" class="link" type="button" data-i18n="ytdlp.updateBtn"></button>
     <span class="spacer"></span>
+    <span id="appUpdate" class="app-update hidden">
+      <span id="appUpdateText"></span>
+      <button id="appUpdateBtn" class="link hidden" type="button"></button>
+    </span>
     <span id="appVersion" class="muted"></span>
   </footer>
+
+  <!-- ============ Settings ============ -->
+  <div id="settingsOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="settingsTitle" data-i18n="set.title"></h2>
+        <button id="settingsClose" class="btn ghost small" type="button" data-i18n-aria="set.close">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="set-row">
+          <label class="field-label" for="langSelect" data-i18n="set.language"></label>
+          <select id="langSelect">
+            <option value="en">English</option>
+            <option value="fil">Filipino</option>
+            <option value="ceb">Cebuano</option>
+            <option value="hil">Hiligaynon</option>
+            <option value="pirate">Pirate (Arrr!)</option>
+            <option value="enchant">Enchanting Table</option>
+          </select>
+          <p class="set-hint" data-i18n="set.languageHint"></p>
+        </div>
+
+        <div class="set-row">
+          <label class="field-label" for="parallelSelect" data-i18n="set.parallel"></label>
+          <select id="parallelSelect">
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+            <option value="4">4</option><option value="5">5</option>
+          </select>
+          <p class="set-hint" data-i18n="set.parallelHint"></p>
+        </div>
+
+        <div class="set-row">
+          <label class="check">
+            <input id="notifyChk" type="checkbox">
+            <span><span data-i18n="set.notify"></span><small data-i18n="set.notifyHint"></small></span>
+          </label>
+          <div class="check-line">
+            <label class="check">
+              <input id="soundChk" type="checkbox">
+              <span data-i18n="set.sound"></span>
+            </label>
+            <button id="soundTest" class="btn ghost small" type="button" data-i18n="set.soundTest"></button>
+          </div>
+        </div>
+
+        <div class="set-row">
+          <label class="field-label" for="signinSelect" data-i18n="set.signin"></label>
+          <select id="signinSelect">
+            <option value="" data-i18n="set.signinNone"></option>
+            <option value="firefox" data-i18n="set.browser.firefox"></option>
+            <option value="chrome" data-i18n="set.browser.chrome"></option>
+            <option value="edge" data-i18n="set.browser.edge"></option>
+            <option value="brave" data-i18n="set.browser.brave"></option>
+          </select>
+          <p class="set-hint" data-i18n="set.signinHint"></p>
+        </div>
+
+        <div class="set-row">
+          <span class="field-label" data-i18n="set.updates"></span>
+          <p id="setVersion" class="set-line"></p>
+          <p id="updStatus" class="set-line muted"></p>
+          <div class="check-line">
+            <button id="updCheckBtn" class="btn ghost small" type="button" data-i18n="upd.check"></button>
+            <button id="updActionBtn" class="btn primary small hidden" type="button"></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button id="settingsDone" class="btn primary" type="button" data-i18n="set.done"></button>
+      </div>
+    </div>
+  </div>
 
   <!-- ============ How to use ============ -->
   <div id="helpOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
     <div class="modal">
       <div class="modal-head">
-        <h2 id="helpTitle">How to use Grabbit</h2>
-        <button id="helpClose" class="btn ghost small" type="button" aria-label="Close">✕</button>
+        <h2 id="helpTitle" data-i18n="help.title"></h2>
+        <button id="helpClose" class="btn ghost small" type="button" data-i18n-aria="set.close">✕</button>
       </div>
-
-      <div class="modal-body">
-        <h3>Quick start</h3>
-        <ol class="steps">
-          <li><strong>Paste a link.</strong> Copy a video link from your browser, then click <em>Paste</em> (or press Ctrl+V in the box). A preview appears so you know it's the right video.</li>
-          <li><strong>Pick a format.</strong> <em>MP4</em> for video, <em>MP3</em> for audio, <em>WAV</em> for lossless audio.</li>
-          <li><strong>Choose the quality.</strong> Higher is bigger and sharper. Options the video doesn't have are greyed out.</li>
-          <li><strong>Click Grab it.</strong> Watch the progress on the right under <em>Downloads</em>. When it says Done, click <em>Show file</em>.</li>
-        </ol>
-
-        <h3>Which format should I pick?</h3>
-        <div class="help-grid">
-          <div class="help-card"><strong>MP4</strong><span>Video with sound. Best for editing, reference clips and watching offline.</span></div>
-          <div class="help-card"><strong>MP3</strong><span>Audio only, smaller files. Good for music and voice. 320 kbps is the best quality.</span></div>
-          <div class="help-card"><strong>WAV</strong><span>Audio only, uncompressed. Big files, but ideal for sound editing and sound effects.</span></div>
-        </div>
-
-        <h3>Editor-friendly (H.264)</h3>
-        <p>Leave this on if you'll edit the video in Premiere, CapCut, Vegas or similar. It picks a video type those programs open without trouble. The catch: YouTube only offers H.264 up to 1080p. Turn it off if you want 1440p or 4K.</p>
-
-        <h3>Only grab a part</h3>
-        <p>Tick <em>Only grab a part</em> to download just a short section, like a sound effect.</p>
-        <ul>
-          <li>Type the times as <code>0:30</code> or <code>1:02:15</code> (hours:minutes:seconds).</li>
-          <li><em>From</em> is where it starts and <em>To</em> is where it stops.</li>
-          <li>Not available for playlists.</li>
-        </ul>
-
-        <h3>Playlists</h3>
-        <p>If your link belongs to a playlist, a checkbox appears. Tick it to grab the whole playlist. Everything is saved in its own folder. Private or deleted videos are skipped automatically.</p>
-
-        <h3>Where do my files go?</h3>
-        <p>By default they go to <code>Downloads\Grabbit</code>. Click <em>Change</em> to pick another folder, or <em>Open</em> to jump straight to it. Past downloads are listed under the <em>History</em> tab.</p>
-
-        <h3>Good to know</h3>
-        <ul>
-          <li>You can start several downloads at once. Use <em>Cancel</em> to stop one.</li>
-          <li>Live streams can't be grabbed until they finish.</li>
-          <li>Private, age-restricted or members-only videos may not work.</li>
-          <li>Only grab content you have the right to use: your own uploads, royalty-free or Creative Commons material, or what your local fair-use rules allow.</li>
-        </ul>
-
-        <h3>Something not working?</h3>
-        <ul>
-          <li><strong>"Video unavailable" but it plays in your browser:</strong> click <em>Update yt-dlp</em> at the bottom of the window, wait for it to finish, then try again. YouTube changes often and this fixes most problems.</li>
-          <li><strong>"That doesn't look like a link":</strong> make sure you copied the whole address, starting with <code>https://</code>.</li>
-          <li><strong>Stuck on "Getting ready…":</strong> Grabbit is checking for updates. Make sure you're online and give it a moment.</li>
-          <li><strong>Windows says "protected your PC" on first launch:</strong> click <em>More info</em>, then <em>Run anyway</em>. This only happens once.</li>
-        </ul>
-
-        <p class="muted help-foot">Tip: press <kbd>F1</kbd> any time to open this guide, and <kbd>Esc</kbd> to close it.</p>
-      </div>
-
+      <div id="helpBody" class="modal-body"></div>
       <div class="modal-foot">
-        <button id="helpDone" class="btn primary" type="button">Got it</button>
+        <button id="helpDone" class="btn primary" type="button" data-i18n="help.done"></button>
       </div>
     </div>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -17,7 +17,7 @@ const listen = (channel) => (callback) => {
 contextBridge.exposeInMainWorld('grabbit', {
   getState: () => ipcRenderer.invoke('app:getState'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
-  chooseFolder: () => ipcRenderer.invoke('dialog:chooseFolder'),
+  chooseFolder: (title) => ipcRenderer.invoke('dialog:chooseFolder', title),
   openFolder: () => ipcRenderer.invoke('shell:openFolder'),
   showFile: (filePath) => ipcRenderer.invoke('shell:showFile', filePath),
   readClipboard: () => ipcRenderer.invoke('clipboard:read'),
@@ -26,8 +26,14 @@ contextBridge.exposeInMainWorld('grabbit', {
   cancel: (id) => ipcRenderer.invoke('yt:cancel', id),
   clearHistory: () => ipcRenderer.invoke('history:clear'),
   updateYtDlp: () => ipcRenderer.invoke('ytdlp:update'),
+  notify: (title, body) => ipcRenderer.invoke('notify:show', { title, body }),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  openDiscord: () => ipcRenderer.invoke('link:discord'),
+  openUpdatePage: () => ipcRenderer.invoke('update:openPage'),
   onJobEvent: listen('job:event'),
   onJobFinished: listen('job:finished'),
   onHistoryChanged: listen('history:changed'),
   onYtDlpStatus: listen('ytdlp:status'),
+  onUpdateStatus: listen('update:status'),
 });

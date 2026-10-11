@@ -6,14 +6,31 @@
   --line: #3a322b;
   --text: #f4ece3;
   --muted: #a89a8c;
-  --accent: #ff8a3d;
-  --accent-2: #ffb27a;
-  --accent-ink: #2a1405;
+  --accent: #ffd500;
+  --accent-2: #ffe566;
+  --accent-ink: #231c00;
   --ok: #7bd389;
   --err: #ff6b6b;
   --radius: 14px;
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+}
+
+/* Enchanting Table language: letters A-Z only; numbers, symbols and links stay normal */
+@font-face {
+  font-family: "Grabbit Enchant";
+  src: url("fonts/enchant.woff") format("woff");
+  unicode-range: U+0041-005A, U+0061-007A;
+}
+html[data-script="enchant"] {
+  --font: "Grabbit Enchant", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Grabbit Enchant", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: 0.06em;
+}
+/* keep these readable: typing fields, the language list (so you can switch back), file paths, video titles */
+html[data-script="enchant"] input, html[data-script="enchant"] select, html[data-script="enchant"] option,
+html[data-script="enchant"] .path, html[data-script="enchant"] .job-title, html[data-script="enchant"] .preview-title {
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; letter-spacing: normal;
 }
 
 * { box-sizing: border-box; }
@@ -44,6 +61,7 @@ input, select, button { font: inherit; color: inherit; }
   justify-content: space-between;
   gap: 12px;
 }
+.top-actions { display: flex; gap: 8px; }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand-icon { width: 42px; height: 42px; border-radius: 11px; }
 .brand h1 {
@@ -333,8 +351,9 @@ select option:disabled { color: #6b6056; }
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; border: 2px solid var(--panel); }
 
-/* ---------- help button + guide ---------- */
-.help-btn { display: inline-flex; align-items: center; gap: 8px; }
+/* ---------- top-bar buttons ---------- */
+.top-btn { display: inline-flex; align-items: center; gap: 8px; }
+.top-icon { font-size: 15px; line-height: 1; }
 .help-q {
   display: inline-grid;
   place-items: center;
@@ -347,6 +366,18 @@ select option:disabled { color: #6b6056; }
   font-size: 13px;
 }
 
+/* ---------- thumbnail options ---------- */
+.extras { display: flex; flex-direction: column; gap: 2px; }
+
+/* ---------- downloads waiting in line ---------- */
+.job.queued .bar > span { width: 0; }
+.job.queued .job-title { opacity: 0.85; }
+.job.queued .job-status { color: var(--accent-2); }
+
+/* ---------- footer: Grabbit's own update ---------- */
+.app-update { color: var(--accent-2); display: inline-flex; gap: 8px; align-items: center; }
+
+/* ---------- dialogs (Settings, How to use) ---------- */
 .overlay {
   position: fixed;
   inset: 0;
@@ -358,7 +389,7 @@ select option:disabled { color: #6b6056; }
 }
 .modal {
   width: min(640px, 100%);
-  max-height: 100%;
+  max-height: calc(100vh - 48px); /* the body scrolls inside; the buttons always stay on screen */
   display: flex;
   flex-direction: column;
   background: var(--panel);
@@ -394,13 +425,17 @@ select option:disabled { color: #6b6056; }
   padding: 0 6px;
   font: 12px Consolas, "Cascadia Mono", monospace;
 }
-.steps { counter-reset: step; list-style: none; padding-left: 0 !important; }
-.steps li {
-  counter-increment: step;
-  position: relative;
-  padding-left: 36px;
-  margin: 10px 0;
+.modal-body .muted { color: var(--muted); }
+.modal-foot {
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: flex-end;
 }
+
+/* numbered steps in the guide */
+.steps { counter-reset: step; list-style: none; padding-left: 0 !important; }
+.steps li { counter-increment: step; position: relative; padding-left: 36px; margin: 10px 0; }
 .steps li::before {
   content: counter(step);
   position: absolute;
@@ -431,9 +466,11 @@ select option:disabled { color: #6b6056; }
 .help-card strong { font: 700 15px var(--font-display); }
 .help-card span { color: var(--muted); }
 .help-foot { margin-top: 16px; font-size: 12px; }
-.modal-foot {
-  padding: 12px 20px;
-  border-top: 1px solid var(--line);
-  display: flex;
-  justify-content: flex-end;
-}
+
+/* settings rows */
+.set-row { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.set-row:last-child { border-bottom: 0; }
+.set-row select { max-width: 300px; }
+.modal-body .set-hint { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.modal-body .set-line { margin: 2px 0; }
+.check-line { display: flex; align-items: center; gap: 14px; margin-top: 6px; flex-wrap: wrap; }

@@ -148,3 +148,129 @@ test('summarizeInfo for video and playlist', () => {
   assert.equal(p.kind, 'playlist');
   assert.equal(p.count, 2);
 });
+
+// ---------------------------------------------------------------- v1.1 features
+
+test('detectSite recognises the supported sites and their share links', () => {
+  const site = yt.detectSite;
+  assert.equal(site('https://www.youtube.com/watch?v=a'), 'youtube');
+  assert.equal(site('https://youtu.be/a'), 'youtube');
+  assert.equal(site('https://m.youtube.com/watch?v=a'), 'youtube');
+  assert.equal(site('https://www.tiktok.com/@someone/video/123'), 'tiktok');
+  assert.equal(site('https://vm.tiktok.com/ZMabc/'), 'tiktok');
+  assert.equal(site('https://www.instagram.com/reel/Cabc123/'), 'instagram');
+  assert.equal(site('https://www.instagram.com/reels/Cabc123/'), 'instagram');
+  assert.equal(site('https://www.facebook.com/reel/123456'), 'facebook');
+  assert.equal(site('https://fb.watch/abc/'), 'facebook');
+  assert.equal(site('https://vimeo.com/123'), 'other');
+  assert.equal(site('not a link'), 'other');
+  // look-alike hosts must not be mistaken for the real thing
+  assert.equal(site('https://nottiktok.com/x'), 'other');
+  assert.equal(site('https://tiktok.com.evil.example/x'), 'other');
+});
+
+test('thumbnail options: save, embed, both, neither', () => {
+  const none = yt.buildDownloadArgs({ ...base, mode: 'mp3', quality: '320' }, tools);
+  assert.ok(!none.includes('--write-thumbnail') && !none.includes('--embed-thumbnail'));
+  assert.ok(!none.includes('--convert-thumbnails'));
+
+  const save = yt.buildDownloadArgs({ ...base, mode: 'mp4', quality: '720', saveThumbnail: true }, tools);
+  assert.ok(save.includes('--write-thumbnail'));
+  assert.ok(!save.includes('--embed-thumbnail'));
+  assert.equal(after(save, '--convert-thumbnails'), 'jpg');
+
+  const embed = yt.buildDownloadArgs({ ...base, mode: 'mp3', quality: '320', embedCover: true }, tools);
+  assert.ok(embed.includes('--embed-thumbnail'));
+  assert.ok(!embed.includes('--write-thumbnail'));
+  assert.equal(after(embed, '--convert-thumbnails'), 'jpg');
+
+  const both = yt.buildDownloadArgs({ ...base, mode: 'mp3', quality: '320', saveThumbnail: true, embedCover: true }, tools);
+  assert.ok(both.includes('--write-thumbnail') && both.includes('--embed-thumbnail'));
+});
+
+test('WAV never tries to embed cover art (it cannot hold any) but can still save the picture', () => {
+  const wav = yt.buildDownloadArgs({ ...base, mode: 'wav', embedCover: true, saveThumbnail: true }, tools);
+  assert.ok(!wav.includes('--embed-thumbnail'));
+  assert.ok(wav.includes('--write-thumbnail'));
+});
+
+test('browser sign-in is used for TikTok/Instagram/Facebook, never for YouTube', () => {
+  const tiktok = 'https://www.tiktok.com/@a/video/1';
+  const withCookies = yt.buildDownloadArgs({ ...base, url: tiktok, mode: 'mp4', quality: '720', cookiesBrowser: 'firefox' }, tools);
+  assert.equal(after(withCookies, '--cookies-from-browser'), 'firefox');
+
+  const youtube = yt.buildDownloadArgs({ ...base, mode: 'mp4', quality: '720', cookiesBrowser: 'firefox' }, tools);
+  assert.ok(!youtube.includes('--cookies-from-browser'));
+
+  const info = yt.buildInfoArgs({ url: 'https://www.instagram.com/reel/abc/', playlist: false, cookiesBrowser: 'edge' }, tools);
+  assert.equal(after(info, '--cookies-from-browser'), 'edge');
+  const infoYt = yt.buildInfoArgs({ url: base.url, playlist: false, cookiesBrowser: 'edge' }, tools);
+  assert.ok(!infoYt.includes('--cookies-from-browser'));
+
+  // an unknown browser name is ignored, so nothing odd can reach the command line
+  const bad = yt.buildDownloadArgs({ ...base, url: tiktok, mode: 'mp4', cookiesBrowser: 'x; calc' }, tools);
+  assert.ok(!bad.includes('--cookies-from-browser'));
+});
+
+test('single-video info lookups never expand a profile page video by video', () => {
+  const args = yt.buildInfoArgs({ url: 'https://www.tiktok.com/@someone', playlist: false }, tools);
+  assert.ok(args.includes('--flat-playlist'));
+  assert.ok(args.includes('--no-playlist'));
+});
+
+test('errors carry a code so the window can translate them', () => {
+  assert.throws(() => yt.validateTrim('0:45', '0:30'), (e) => e.code === 'trimOrder' && /after the start/.test(e.message));
+  assert.throws(() => yt.validateTrim('x', ''), (e) => e.code === 'trimStart');
+  assert.throws(() => yt.validateUrl(''), (e) => e.code === 'urlEmpty');
+  assert.throws(() => yt.validateUrl('ftp://x.y/z'), (e) => e.code === 'urlProto');
+  assert.equal(yt.classifyError('[youtube] abc: Private video. Sign in').code, 'private');
+  assert.equal(yt.parseLine('ERROR: [youtube] abc: Video unavailable').code, 'unavailable');
+  assert.equal(yt.classifyError('[youtube] abc: Something odd happened').code, null);
+});
+
+test('site-specific errors get a helpful message', () => {
+  const ig = yt.classifyError('[Instagram] Cabc: Instagram sent an empty media response. Check if this post is accessible in your browser without being logged-in.');
+  assert.equal(ig.code, 'instagram');
+  assert.match(ig.message, /Sign-in help/);
+  const fb = yt.classifyError('[facebook] 123: Cannot parse data. You may need to log in');
+  assert.equal(fb.code, 'facebook');
+  const tt = yt.classifyError('[TikTok] 123: Unable to extract webpage video data');
+  assert.equal(tt.code, 'tiktok');
+  // a generic "unavailable" from YouTube is still the generic message
+  assert.equal(yt.classifyError('[youtube] x: Video unavailable').code, 'unavailable');
+});
+
+test('summarizeInfo reports the site and counts a vertical video by its shorter side', () => {
+  const reel = yt.summarizeInfo({
+    title: 'Reel', formats: [{ vcodec: 'h264', width: 720, height: 1280 }, { vcodec: 'h264', width: 1080, height: 1920 }],
+  }, 'https://www.instagram.com/reel/abc/');
+  assert.equal(reel.site, 'instagram');
+  assert.equal(reel.maxHeight, 1080);
+  const wide = yt.summarizeInfo({ title: 'Wide', formats: [{ vcodec: 'avc1', width: 1920, height: 1080 }] }, 'https://youtu.be/a');
+  assert.equal(wide.maxHeight, 1080);
+  assert.equal(wide.site, 'youtube');
+});
+
+// ---------------------------------------------------------------- X (Twitter)
+
+test('detectSite recognises X / Twitter links, not look-alikes', () => {
+  assert.equal(yt.detectSite('https://x.com/someone/status/123'), 'twitter');
+  assert.equal(yt.detectSite('https://twitter.com/someone/status/123'), 'twitter');
+  assert.equal(yt.detectSite('https://mobile.twitter.com/someone/status/123'), 'twitter');
+  assert.equal(yt.detectSite('https://t.co/abc123'), 'twitter');
+  assert.equal(yt.detectSite('https://box.com/file'), 'other');
+  assert.equal(yt.detectSite('https://notx.com/a'), 'other');
+  assert.equal(yt.detectSite('https://x.com.evil.example/a'), 'other');
+});
+
+test('X links use the browser sign-in when one is chosen', () => {
+  const args = yt.buildDownloadArgs({ ...base, url: 'https://x.com/a/status/1', mode: 'mp4', cookiesBrowser: 'firefox' }, tools);
+  assert.equal(after(args, '--cookies-from-browser'), 'firefox');
+});
+
+test('X errors get a helpful message and a post without video says so', () => {
+  assert.equal(yt.classifyError('[twitter] 1: No video could be found in this tweet').code, 'noVideo');
+  assert.equal(yt.classifyError('[twitter] 1: NSFW tweet requires authentication').code, 'twitter');
+  assert.match(yt.classifyError('[twitter] 1: HTTP Error 403: Forbidden').message, /Sign-in help/);
+  assert.equal(yt.summarizeInfo({ _type: 'playlist', title: 'Post', entries: [{ id: 1 }, { id: 2 }] }, 'https://x.com/a/status/1').site, 'twitter');
+});

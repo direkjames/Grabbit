@@ -10,6 +10,19 @@
 const VIDEO_QUALITIES = ['best', '2160', '1440', '1080', '720', '480', '360'];
 const MP3_BITRATES = ['320', '256', '192', '128'];
 const MODES = ['mp4', 'mp3', 'wav'];
+// Browsers yt-dlp can borrow a sign-in from (used for Instagram / Facebook / TikTok only)
+const COOKIE_BROWSERS = ['firefox', 'chrome', 'edge', 'brave'];
+
+/**
+ * An error with a short machine code (e.g. "trimOrder") next to the English
+ * message, so the interface can show it in the user's language.
+ */
+class GrabError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
 
 /**
  * Parse "45", "1:30", "01:02:03" (optionally with decimals on the seconds
@@ -43,17 +56,17 @@ function labelTime(seconds) {
 
 /**
  * Validate a trim range. Returns { start, end } in seconds (either may be
- * null) or throws an Error with a friendly message.
+ * null) or throws a GrabError with a friendly message.
  */
 function validateTrim(startInput, endInput, durationSeconds) {
   const start = parseTime(startInput);
   const end = parseTime(endInput);
-  if (Number.isNaN(start)) throw new Error('Start time should look like 45, 1:30 or 1:02:03.');
-  if (Number.isNaN(end)) throw new Error('End time should look like 45, 1:30 or 1:02:03.');
-  if (start === null && end === null) throw new Error('Enter a start time, an end time, or both.');
-  if (start !== null && end !== null && end <= start) throw new Error('End time must be after the start time.');
+  if (Number.isNaN(start)) throw new GrabError('trimStart', 'Start time should look like 45, 1:30 or 1:02:03.');
+  if (Number.isNaN(end)) throw new GrabError('trimEnd', 'End time should look like 45, 1:30 or 1:02:03.');
+  if (start === null && end === null) throw new GrabError('trimEmpty', 'Enter a start time, an end time, or both.');
+  if (start !== null && end !== null && end <= start) throw new GrabError('trimOrder', 'End time must be after the start time.');
   if (durationSeconds && start !== null && start >= durationSeconds) {
-    throw new Error('Start time is past the end of the video.');
+    throw new GrabError('trimPast', 'Start time is past the end of the video.');
   }
   return { start, end };
 }
@@ -61,16 +74,16 @@ function validateTrim(startInput, endInput, durationSeconds) {
 /** Validate that a string is an http(s) URL. Returns the normalized URL or throws. */
 function validateUrl(input) {
   const str = String(input || '').trim();
-  if (!str) throw new Error('Paste a link first.');
-  if (str.length > 2048) throw new Error('That link is too long.');
+  if (!str) throw new GrabError('urlEmpty', 'Paste a link first.');
+  if (str.length > 2048) throw new GrabError('urlLong', 'That link is too long.');
   let url;
   try {
     url = new URL(str);
   } catch {
-    throw new Error("That doesn't look like a link.");
+    throw new GrabError('urlBad', "That doesn't look like a link.");
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new Error('Only http and https links are supported.');
+    throw new GrabError('urlProto', 'Only http and https links are supported.');
   }
   return url.toString();
 }
@@ -85,8 +98,30 @@ function hasPlaylist(input) {
   }
 }
 
+const isHost = (host, domain) => host === domain || host.endsWith(`.${domain}`);
+
+/**
+ * Which site a link belongs to: 'youtube' | 'tiktok' | 'instagram' | 'facebook' | 'twitter' | 'other'.
+ * ('twitter' covers X: x.com, twitter.com and the t.co short links.)
+ * Works for the usual share links too (vm.tiktok.com, fb.watch, youtu.be ...).
+ */
+function detectSite(input) {
+  let host;
+  try {
+    host = new URL(String(input).trim()).hostname.toLowerCase();
+  } catch {
+    return 'other';
+  }
+  if (isHost(host, 'youtube.com') || isHost(host, 'youtu.be') || isHost(host, 'youtube-nocookie.com')) return 'youtube';
+  if (isHost(host, 'tiktok.com')) return 'tiktok';
+  if (isHost(host, 'instagram.com') || isHost(host, 'instagr.am')) return 'instagram';
+  if (isHost(host, 'facebook.com') || isHost(host, 'fb.watch') || isHost(host, 'fb.com')) return 'facebook';
+  if (isHost(host, 'twitter.com') || isHost(host, 'x.com') || host === 't.co') return 'twitter';
+  return 'other';
+}
+
 /** Arguments every yt-dlp call shares. */
-function baseArgs(tools) {
+function baseArgs(tools, { url, cookiesBrowser } = {}) {
   const args = [
     '--ignore-config',
     '--no-color',
@@ -97,34 +132,44 @@ function baseArgs(tools) {
   if (tools && tools.denoPath) args.push('--js-runtimes', `deno:${tools.denoPath}`);
   // Lets yt-dlp fetch YouTube's challenge-solver script if the bundled one is missing/outdated.
   args.push('--remote-components', 'ejs:github');
+  // Borrow the browser's sign-in, but never for YouTube: that is only meant for the
+  // sites that ask for a login (Instagram, Facebook, TikTok, X).
+  if (url && COOKIE_BROWSERS.includes(cookiesBrowser) && detectSite(url) !== 'youtube') {
+    args.push('--cookies-from-browser', cookiesBrowser);
+  }
   return args;
 }
 
 /** Arguments for fetching video/playlist info as JSON (no download). */
-function buildInfoArgs({ url, playlist }, tools) {
+function buildInfoArgs({ url, playlist, cookiesBrowser }, tools) {
+  const valid = validateUrl(url);
   return [
-    ...baseArgs(tools),
+    ...baseArgs(tools, { url: valid, cookiesBrowser }),
     '-J',
     '--no-warnings',
-    ...(playlist ? ['--yes-playlist', '--flat-playlist'] : ['--no-playlist']),
+    // --flat-playlist keeps profile/collection pages (TikTok, Instagram...) from being
+    // looked up video by video. It has no effect on a normal single video.
+    '--flat-playlist',
+    ...(playlist ? ['--yes-playlist'] : ['--no-playlist']),
     '--',
-    validateUrl(url),
+    valid,
   ];
 }
 
 /**
  * Arguments for a download.
  * opts: { url, mode: 'mp4'|'mp3'|'wav', quality, editorFriendly,
- *         playlist, trim: {start,end}|null, outputDir, tempDir }
+ *         playlist, trim: {start,end}|null, outputDir, tempDir,
+ *         saveThumbnail, embedCover, cookiesBrowser }
  */
 function buildDownloadArgs(opts, tools) {
   const url = validateUrl(opts.url);
   const mode = MODES.includes(opts.mode) ? opts.mode : 'mp4';
-  if (!opts.outputDir) throw new Error('Choose a folder to save into.');
+  if (!opts.outputDir) throw new GrabError('noFolder', 'Choose a folder to save into.');
   const trim = opts.trim && !opts.playlist ? opts.trim : null;
 
   const args = [
-    ...baseArgs(tools),
+    ...baseArgs(tools, { url, cookiesBrowser: opts.cookiesBrowser }),
     '--newline',
     '--progress',
     '--no-mtime', // file date = the day you grabbed it (handy for sorting in editors)
@@ -161,6 +206,15 @@ function buildDownloadArgs(opts, tools) {
   } else {
     args.push('-f', 'ba/b', '-x', '--audio-format', 'wav');
   }
+
+  // ---- Thumbnail: save as a picture and/or embed as cover art
+  // (WAV files can't hold cover art, so embedding is skipped for WAV.)
+  const wantEmbed = Boolean(opts.embedCover) && mode !== 'wav';
+  const wantSave = Boolean(opts.saveThumbnail);
+  if (wantSave) args.push('--write-thumbnail');
+  if (wantEmbed) args.push('--embed-thumbnail');
+  // YouTube's thumbnails are .webp, which most editors and players can't open: make them .jpg
+  if (wantSave || wantEmbed) args.push('--convert-thumbnails', 'jpg');
 
   // ---- Trimming (one section of a single video)
   if (trim && (trim.start !== null || trim.end !== null)) {
@@ -224,39 +278,64 @@ function parseLine(rawLine) {
     return { type: 'file', path: line.slice('GRABBIT_FILE|'.length).trim() };
   }
   if (line.startsWith('ERROR:')) {
-    return { type: 'error', message: friendlyError(line.slice(6).trim()) };
+    const { code, message } = classifyError(line.slice(6).trim());
+    return { type: 'error', message, code };
   }
   return null;
 }
 
-/** Make the most common yt-dlp errors understandable for non-techy friends. */
-function friendlyError(msg) {
+/**
+ * Make the most common yt-dlp errors understandable for non-techy friends.
+ * Returns { code, message }: `code` lets the interface show the message in the
+ * user's language (code is null when we have nothing better than yt-dlp's own text).
+ * Site-specific rules come first because their errors are worded generically.
+ */
+const ERROR_RULES = [
+  ['noVideo', /No video could be found in this (tweet|post)/i, null, "That post doesn't have a video."],
+  ['twitter', /\[twitter/i, /login|log in|sign in|authenticat|nsfw|protected|not available|unavailable|suspended|rate.?limit|age-restricted|guest|403|404|private/i,
+    "X wouldn't let Grabbit in. Open Settings → Sign-in help, pick the browser where you're logged in to X, then try again. Protected accounts can't be grabbed."],
+  ['instagram', /\[instagram\]/i, /login|log in|rate-limit|empty media|cookies|not available|private|restricted/i,
+    "Instagram wouldn't let Grabbit in. Open Settings → Sign-in help, pick the browser where you're logged in to Instagram, then try again."],
+  ['facebook', /\[facebook\]/i, /log in|login|cookies|private|not available|unavailable|cannot parse|permission/i,
+    "Facebook wouldn't let Grabbit in. Open Settings → Sign-in help, pick the browser where you're logged in to Facebook, then try again. Private videos can't be grabbed."],
+  ['tiktok', /\[tiktok\]/i, /unable to extract|blocked|ip address|login|private|not available|status code|expecting value/i,
+    'TikTok didn\'t let Grabbit through. Click "Update yt-dlp" at the bottom and try again. Private accounts can\'t be grabbed.'],
+  ['private', /Private video/i, null, 'This video is private.'],
+  ['unavailable', /Video unavailable|This video is not available/i, null,
+    'Video unavailable. If it plays fine in your browser, click "Update yt-dlp" at the bottom and try again.'],
+  ['age', /Sign in to confirm your age|age-restricted/i, null, 'This video is age-restricted and needs a signed-in account.'],
+  ['bot', /Sign in to confirm you.?re not a bot/i, null, 'YouTube is asking for a bot check. Wait a bit, then try again.'],
+  ['members', /members-only|Join this channel/i, null, 'This is a members-only video.'],
+  ['notStarted', /live event will begin|Premieres in/i, null, "This video hasn't started yet."],
+  ['unsupported', /Unsupported URL/i, null, "That site or link type isn't supported."],
+  ['network', /getaddrinfo|Unable to download webpage|timed out|Connection refused/i, null,
+    'Network problem. Check your internet connection and try again.'],
+  ['http403', /HTTP Error 403/i, null, 'Download was blocked (403). Click "Update yt-dlp" at the bottom and try again.'],
+  ['diskFull', /No space left/i, null, 'Your drive is full.'],
+];
+
+function classifyError(msg) {
   const m = String(msg);
-  if (/Private video/i.test(m)) return 'This video is private.';
-  if (/Video unavailable|This video is not available/i.test(m)) {
-    return 'Video unavailable. If it plays fine in your browser, click "Update yt-dlp" at the bottom and try again.';
+  for (const [code, test, also, message] of ERROR_RULES) {
+    if (test.test(m) && (!also || also.test(m))) return { code, message };
   }
-  if (/Sign in to confirm your age|age-restricted/i.test(m)) return 'This video is age-restricted and needs a signed-in account.';
-  if (/Sign in to confirm you.?re not a bot/i.test(m)) return 'YouTube is asking for a bot check. Wait a bit, then try again.';
-  if (/members-only|Join this channel/i.test(m)) return 'This is a members-only video.';
-  if (/live event will begin|Premieres in/i.test(m)) return "This video hasn't started yet.";
-  if (/Unsupported URL/i.test(m)) return "That site or link type isn't supported.";
-  if (/getaddrinfo|Unable to download webpage|timed out|Connection refused/i.test(m)) {
-    return 'Network problem. Check your internet connection and try again.';
-  }
-  if (/HTTP Error 403/i.test(m)) return 'Download was blocked (403). Click "Update yt-dlp" at the bottom and try again.';
-  if (/No space left/i.test(m)) return 'Your drive is full.';
-  return m.replace(/^\[[^\]]+\]\s*[\w-]+:\s*/, '');
+  return { code: null, message: m.replace(/^\[[^\]]+\]\s*[\w-]+:\s*/, '') };
+}
+
+function friendlyError(msg) {
+  return classifyError(msg).message;
 }
 
 /** Pick out what the UI needs from yt-dlp's -J output. */
-function summarizeInfo(info) {
+function summarizeInfo(info, url) {
   if (!info || typeof info !== 'object') throw new Error('No info returned.');
+  const site = detectSite(url || info.webpage_url || '');
   if (info._type === 'playlist') {
     const entries = Array.isArray(info.entries) ? info.entries.filter(Boolean) : [];
     const firstThumb = entries.find((e) => Array.isArray(e.thumbnails) && e.thumbnails.length);
     return {
       kind: 'playlist',
+      site,
       title: info.title || 'Playlist',
       channel: info.uploader || info.channel || null,
       count: entries.length,
@@ -265,11 +344,14 @@ function summarizeInfo(info) {
       maxHeight: null,
     };
   }
+  // "Resolution" is the shorter side, the same way yt-dlp's quality sorting sees it,
+  // so a vertical 1080x1920 TikTok or Reel counts as 1080p, not 1920p.
   const heights = (info.formats || [])
     .filter((f) => f && f.vcodec && f.vcodec !== 'none' && Number.isFinite(f.height))
-    .map((f) => f.height);
+    .map((f) => (Number.isFinite(f.width) ? Math.min(f.width, f.height) : f.height));
   return {
     kind: 'video',
+    site,
     title: info.title || 'Untitled',
     channel: info.channel || info.uploader || null,
     duration: Number.isFinite(info.duration) ? info.duration : null,
@@ -284,14 +366,18 @@ module.exports = {
   VIDEO_QUALITIES,
   MP3_BITRATES,
   MODES,
+  COOKIE_BROWSERS,
+  GrabError,
   parseTime,
   labelTime,
   validateTrim,
   validateUrl,
   hasPlaylist,
+  detectSite,
   buildInfoArgs,
   buildDownloadArgs,
   parseLine,
+  classifyError,
   friendlyError,
   summarizeInfo,
 };

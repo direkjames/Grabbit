@@ -1,7 +1,7 @@
 {
   "name": "grabbit",
   "productName": "Grabbit",
-  "version": "1.0.0",
+  "version": "1.1.2",
   "description": "Grab videos and audio as MP4, MP3 or WAV. A friendly desktop app powered by yt-dlp.",
   "author": "direk james",
   "license": "MIT",
@@ -10,22 +10,32 @@
     "start": "electron .",
     "test": "node --test",
     "fetch-bins": "node scripts/fetch-binaries.js",
+    "icon": "node scripts/set-icon.js",
     "postinstall": "node scripts/fetch-binaries.js",
     "predist": "node scripts/fetch-binaries.js",
-    "dist": "electron-builder --win --x64",
-    "pack": "electron-builder --win --x64 --dir"
+    "dist": "electron-builder --win --x64 --publish never",
+    "pack": "electron-builder --win --x64 --dir --publish never"
   },
   "dependencies": {
+    "electron-updater": "^6.6.2",
     "ffmpeg-static": "^5.2.0"
   },
   "devDependencies": {
-    "electron": "^39.0.0",
-    "electron-builder": "^26.0.12"
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "com.direkjames.grabbit",
     "productName": "Grabbit",
     "copyright": "Copyright © 2026 direk james",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "direkjames",
+        "repo": "grabbit",
+        "releaseType": "release"
+      }
+    ],
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -56,11 +66,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -76,5 +90,10 @@
     "portable": {
       "artifactName": "Grabbit-Portable-${version}.${ext}"
     }
+  },
+  "allowScripts": {
+    "electron@39.8.10": true,
+    "ffmpeg-static@5.3.0": true,
+    "electron-winstaller@5.4.0": true
   }
 }
