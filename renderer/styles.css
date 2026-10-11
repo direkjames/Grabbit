@@ -39,6 +39,10 @@ input, select, button { font: inherit; color: inherit; }
 /* ---------- top bar ---------- */
 .topbar {
   padding: 18px 24px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand-icon { width: 42px; height: 42px; border-radius: 11px; }
@@ -328,3 +332,108 @@ select option:disabled { color: #6b6056; }
 
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; border: 2px solid var(--panel); }
+
+/* ---------- help button + guide ---------- */
+.help-btn { display: inline-flex; align-items: center; gap: 8px; }
+.help-q {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 6, 5, 0.72);
+}
+.modal {
+  width: min(640px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-head h2 { margin: 0; font: 700 18px var(--font-display); }
+.modal-body { padding: 8px 22px 12px; overflow-y: auto; user-select: text; }
+.modal-body h3 {
+  margin: 20px 0 6px;
+  font: 700 13px var(--font);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-2);
+}
+.modal-body p, .modal-body li { color: var(--text); }
+.modal-body p { margin: 0 0 8px; }
+.modal-body ul, .modal-body ol { margin: 0 0 8px; padding-left: 20px; }
+.modal-body li { margin: 4px 0; }
+.modal-body em { font-style: normal; font-weight: 600; color: var(--accent-2); }
+.modal-body code, kbd {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 6px;
+  font: 12px Consolas, "Cascadia Mono", monospace;
+}
+.steps { counter-reset: step; list-style: none; padding-left: 0 !important; }
+.steps li {
+  counter-increment: step;
+  position: relative;
+  padding-left: 36px;
+  margin: 10px 0;
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: 13px;
+}
+.help-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+@media (max-width: 560px) { .help-grid { grid-template-columns: 1fr; } }
+.help-card {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.help-card strong { font: 700 15px var(--font-display); }
+.help-card span { color: var(--muted); }
+.help-foot { margin-top: 16px; font-size: 12px; }
+.modal-foot {
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: flex-end;
+}

@@ -17,6 +17,9 @@
         <p class="tagline">Paste a link. Grab the file.</p>
       </div>
     </div>
+    <button id="helpBtn" class="btn ghost help-btn" type="button" title="How to use Grabbit (F1)">
+      <span class="help-q" aria-hidden="true">?</span> How to use
+    </button>
   </header>
 
   <main class="layout">
@@ -125,6 +128,72 @@
     <span class="spacer"></span>
     <span id="appVersion" class="muted"></span>
   </footer>
+
+  <!-- ============ How to use ============ -->
+  <div id="helpOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="helpTitle">How to use Grabbit</h2>
+        <button id="helpClose" class="btn ghost small" type="button" aria-label="Close">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <h3>Quick start</h3>
+        <ol class="steps">
+          <li><strong>Paste a link.</strong> Copy a video link from your browser, then click <em>Paste</em> (or press Ctrl+V in the box). A preview appears so you know it's the right video.</li>
+          <li><strong>Pick a format.</strong> <em>MP4</em> for video, <em>MP3</em> for audio, <em>WAV</em> for lossless audio.</li>
+          <li><strong>Choose the quality.</strong> Higher is bigger and sharper. Options the video doesn't have are greyed out.</li>
+          <li><strong>Click Grab it.</strong> Watch the progress on the right under <em>Downloads</em>. When it says Done, click <em>Show file</em>.</li>
+        </ol>
+
+        <h3>Which format should I pick?</h3>
+        <div class="help-grid">
+          <div class="help-card"><strong>MP4</strong><span>Video with sound. Best for editing, reference clips and watching offline.</span></div>
+          <div class="help-card"><strong>MP3</strong><span>Audio only, smaller files. Good for music and voice. 320 kbps is the best quality.</span></div>
+          <div class="help-card"><strong>WAV</strong><span>Audio only, uncompressed. Big files, but ideal for sound editing and sound effects.</span></div>
+        </div>
+
+        <h3>Editor-friendly (H.264)</h3>
+        <p>Leave this on if you'll edit the video in Premiere, CapCut, Vegas or similar. It picks a video type those programs open without trouble. The catch: YouTube only offers H.264 up to 1080p. Turn it off if you want 1440p or 4K.</p>
+
+        <h3>Only grab a part</h3>
+        <p>Tick <em>Only grab a part</em> to download just a short section, like a sound effect.</p>
+        <ul>
+          <li>Type the times as <code>0:30</code> or <code>1:02:15</code> (hours:minutes:seconds).</li>
+          <li><em>From</em> is where it starts and <em>To</em> is where it stops.</li>
+          <li>Not available for playlists.</li>
+        </ul>
+
+        <h3>Playlists</h3>
+        <p>If your link belongs to a playlist, a checkbox appears. Tick it to grab the whole playlist. Everything is saved in its own folder. Private or deleted videos are skipped automatically.</p>
+
+        <h3>Where do my files go?</h3>
+        <p>By default they go to <code>Downloads\Grabbit</code>. Click <em>Change</em> to pick another folder, or <em>Open</em> to jump straight to it. Past downloads are listed under the <em>History</em> tab.</p>
+
+        <h3>Good to know</h3>
+        <ul>
+          <li>You can start several downloads at once. Use <em>Cancel</em> to stop one.</li>
+          <li>Live streams can't be grabbed until they finish.</li>
+          <li>Private, age-restricted or members-only videos may not work.</li>
+          <li>Only grab content you have the right to use: your own uploads, royalty-free or Creative Commons material, or what your local fair-use rules allow.</li>
+        </ul>
+
+        <h3>Something not working?</h3>
+        <ul>
+          <li><strong>"Video unavailable" but it plays in your browser:</strong> click <em>Update yt-dlp</em> at the bottom of the window, wait for it to finish, then try again. YouTube changes often and this fixes most problems.</li>
+          <li><strong>"That doesn't look like a link":</strong> make sure you copied the whole address, starting with <code>https://</code>.</li>
+          <li><strong>Stuck on "Getting ready…":</strong> Grabbit is checking for updates. Make sure you're online and give it a moment.</li>
+          <li><strong>Windows says "protected your PC" on first launch:</strong> click <em>More info</em>, then <em>Run anyway</em>. This only happens once.</li>
+        </ul>
+
+        <p class="muted help-foot">Tip: press <kbd>F1</kbd> any time to open this guide, and <kbd>Esc</kbd> to close it.</p>
+      </div>
+
+      <div class="modal-foot">
+        <button id="helpDone" class="btn primary" type="button">Got it</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

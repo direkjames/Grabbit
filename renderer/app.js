@@ -417,6 +417,42 @@ function onYtDlpStatus(s) {
   }
 }
 
+// ------------------------------------------------------------ how-to guide
+
+let helpReturnFocus = null;
+
+function openHelp() {
+  helpReturnFocus = document.activeElement;
+  $('helpOverlay').classList.remove('hidden');
+  $('helpDone').focus();
+  $('helpOverlay').querySelector('.modal-body').scrollTop = 0;
+}
+
+function closeHelp() {
+  $('helpOverlay').classList.add('hidden');
+  if (!state.settings.seenHelp) {
+    state.settings.seenHelp = true;
+    api.setSettings({ seenHelp: true });
+  }
+  if (helpReturnFocus && helpReturnFocus.focus) helpReturnFocus.focus();
+}
+
+function setupHelp() {
+  $('helpBtn').addEventListener('click', openHelp);
+  $('helpClose').addEventListener('click', closeHelp);
+  $('helpDone').addEventListener('click', closeHelp);
+  $('helpOverlay').addEventListener('mousedown', (e) => {
+    if (e.target === $('helpOverlay')) closeHelp();
+  });
+  document.addEventListener('keydown', (e) => {
+    const open = !$('helpOverlay').classList.contains('hidden');
+    if (e.key === 'F1') { e.preventDefault(); open ? closeHelp() : openHelp(); }
+    else if (e.key === 'Escape' && open) closeHelp();
+  });
+  // Show the guide by itself the very first time Grabbit is opened
+  if (!state.settings.seenHelp) openHelp();
+}
+
 // ------------------------------------------------------------ setup
 
 async function init() {
@@ -485,6 +521,7 @@ async function init() {
   });
 
   $('url').focus();
+  setupHelp();
 }
 
 init();

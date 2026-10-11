@@ -133,6 +133,7 @@ function loadSettings() {
     videoQuality: '1080',
     audioQuality: '320',
     editorFriendly: true,
+    seenHelp: false,
     history: [],
   };
   try {
@@ -274,7 +275,7 @@ function registerIpc() {
   }));
 
   ipcMain.handle('settings:set', (_e, patch) => {
-    const allowed = ['mode', 'videoQuality', 'audioQuality', 'editorFriendly'];
+    const allowed = ['mode', 'videoQuality', 'audioQuality', 'editorFriendly', 'seenHelp'];
     for (const key of allowed) {
       if (patch && Object.prototype.hasOwnProperty.call(patch, key)) settings[key] = patch[key];
     }

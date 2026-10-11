@@ -12,6 +12,7 @@ Paste a link, grab the file. A free Windows desktop app for downloading video an
 - Whole-playlist downloads, saved into a folder per playlist
 - Several downloads at once, with progress, speed and time left
 - History with a "Show file" button
+- Built-in **How to use** guide (top-right button, or press F1). It opens by itself the first time the app runs
 - yt-dlp updates itself on every launch, so the app keeps working when YouTube changes things
 
 Grabbit is a friendly front end for [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org) and [Deno](https://deno.com), which are all bundled inside the app. Your friends don't install anything else.
