@@ -243,7 +243,9 @@ function killTree(proc) {
   if (!proc || proc.exitCode !== null) return;
   if (IS_WIN) {
     // yt-dlp starts ffmpeg as a child; /T kills the whole tree
-    execFile('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true }, () => {});
+    execFile('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true }, (err) => {
+      if (err && proc.exitCode === null) proc.kill(); // taskkill failed: stop at least the main process
+    });
   } else {
     proc.kill('SIGTERM');
   }
@@ -292,7 +294,7 @@ function runJob(job) {
       if (!ev) continue;
       if (ev.type === 'file') job.files.push(ev.path);
       if (ev.type === 'error') job.errors.push({ message: ev.message, code: ev.code });
-      send('job:event', { id, ...ev });
+      if (!job.cancelled) send('job:event', { id, ...ev }); // after Cancel, stray progress must not bring the card back to life
     }
     buffered.value = buf;
   };
@@ -338,6 +340,8 @@ function runJob(job) {
     queue.finish(id); // frees the slot and starts the next waiting download
   };
 
+  job.forceEnd = () => end(-1);
+
   let proc;
   try {
     proc = spawn(tools.ytdlpPath, job.args, { windowsHide: true, env: runEnv() });
@@ -347,6 +351,7 @@ function runJob(job) {
     return;
   }
   job.proc = proc;
+  if (job.cancelled) killTree(proc); // cancelled in the instant before it started
 
   proc.stdout.setEncoding('utf8');
   proc.stderr.setEncoding('utf8');
@@ -506,6 +511,12 @@ function registerIpc() {
       send('job:finished', { id, status: 'cancelled', files: [], error: null, errorCode: null, skipped: 0 });
     } else {
       killTree(job.proc);
+      // Safety net: if the process is still alive a few seconds later, force it, and finally free the slot.
+      const proc = job.proc;
+      setTimeout(() => { if (!job.ended && proc) killTree(proc); }, 3000).unref();
+      setTimeout(() => {
+        if (!job.ended && proc) { try { proc.kill('SIGKILL'); } catch { /* already gone */ } job.forceEnd?.(); }
+      }, 8000).unref();
     }
     return true;
   });

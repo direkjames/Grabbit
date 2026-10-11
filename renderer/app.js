@@ -370,6 +370,7 @@ function addJobCard(id, meta, queued) {
   const job = { el: li, bar, status, action, meta, statusFn: null, finished: false };
   action.addEventListener('click', () => {
     action.disabled = true;
+    job.cancelling = true; // from now on ignore late progress from the dying download
     setJobStatus(job, () => t('job.cancelling'));
     api.cancel(id);
   });
@@ -385,7 +386,7 @@ function addJobCard(id, meta, queued) {
 
 function onJobEvent(ev) {
   const job = state.jobs.get(ev.id);
-  if (!job) return;
+  if (!job || job.cancelling) return;
 
   if (ev.type === 'started') {
     // its turn came: it was waiting in line
