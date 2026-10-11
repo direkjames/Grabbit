@@ -1,0 +1,131 @@
+<!doctype html>
+<!-- Grabbit - by direk james -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>Grabbit</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="assets/icon.png" alt="" class="brand-icon">
+      <div>
+        <h1>Grabbit</h1>
+        <p class="tagline">Paste a link. Grab the file.</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ============ Grab panel ============ -->
+    <section class="panel grab" aria-label="Grab a video">
+      <label class="field-label" for="url">Video link</label>
+      <div class="url-row">
+        <input id="url" type="text" spellcheck="false" autocomplete="off"
+               placeholder="https://www.youtube.com/watch?v=…">
+        <button id="pasteBtn" class="btn ghost" type="button" title="Paste from clipboard">Paste</button>
+      </div>
+      <label id="playlistRow" class="check hidden">
+        <input id="playlist" type="checkbox">
+        <span>This link is part of a playlist. Grab the <strong>whole playlist</strong>.</span>
+      </label>
+
+      <div id="preview" class="preview empty" aria-live="polite">
+        <div class="preview-thumb"><img id="thumb" alt=""></div>
+        <div class="preview-body">
+          <p id="previewTitle" class="preview-title">Paste a link to see the video here</p>
+          <p id="previewMeta" class="preview-meta">YouTube and most other video sites work</p>
+        </div>
+      </div>
+
+      <span class="field-label">Format</span>
+      <div class="segmented" role="radiogroup" aria-label="Format">
+        <button type="button" role="radio" data-mode="mp4" class="seg">
+          <span class="seg-title">MP4</span><span class="seg-sub">Video</span>
+        </button>
+        <button type="button" role="radio" data-mode="mp3" class="seg">
+          <span class="seg-title">MP3</span><span class="seg-sub">Audio</span>
+        </button>
+        <button type="button" role="radio" data-mode="wav" class="seg">
+          <span class="seg-title">WAV</span><span class="seg-sub">Lossless audio</span>
+        </button>
+      </div>
+
+      <div class="options">
+        <div id="qualityWrap" class="option">
+          <label class="field-label" for="quality">Quality</label>
+          <select id="quality"></select>
+        </div>
+        <label id="editorRow" class="check">
+          <input id="editorFriendly" type="checkbox">
+          <span>Editor-friendly (H.264)
+            <small>Plays nicely in Premiere, CapCut and Vegas. YouTube only offers H.264 up to 1080p.</small>
+          </span>
+        </label>
+      </div>
+
+      <div id="trimBlock" class="trim">
+        <label class="check">
+          <input id="trimEnabled" type="checkbox">
+          <span>Only grab a part <small>Great for sound effects and short clips</small></span>
+        </label>
+        <div id="trimFields" class="trim-fields hidden">
+          <div class="option">
+            <label class="field-label" for="start">From</label>
+            <input id="start" type="text" placeholder="0:30" inputmode="numeric">
+          </div>
+          <span class="trim-arrow" aria-hidden="true">→</span>
+          <div class="option">
+            <label class="field-label" for="end">To</label>
+            <input id="end" type="text" placeholder="0:45" inputmode="numeric">
+          </div>
+        </div>
+      </div>
+
+      <div class="save-row">
+        <div class="save-info">
+          <span class="field-label">Save to</span>
+          <span id="outputDir" class="path" title=""></span>
+        </div>
+        <button id="changeFolder" class="btn ghost small" type="button">Change</button>
+        <button id="openFolder" class="btn ghost small" type="button">Open</button>
+      </div>
+
+      <p id="formError" class="form-error hidden" role="alert"></p>
+      <button id="grabBtn" class="btn primary big" type="button">Grab it</button>
+    </section>
+
+    <!-- ============ Downloads panel ============ -->
+    <section class="panel side" aria-label="Downloads">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" class="tab active" data-tab="active">Downloads <span id="activeCount" class="count hidden">0</span></button>
+        <button type="button" role="tab" class="tab" data-tab="history">History</button>
+      </div>
+      <div id="tab-active" class="tab-body">
+        <ul id="jobList" class="job-list"></ul>
+        <div id="jobsEmpty" class="empty-state">
+          <p>Nothing downloading yet.</p>
+          <p class="muted">You can start more than one grab at a time.</p>
+        </div>
+      </div>
+      <div id="tab-history" class="tab-body hidden">
+        <ul id="historyList" class="job-list"></ul>
+        <div id="historyEmpty" class="empty-state"><p>No finished downloads yet.</p></div>
+        <button id="clearHistory" class="btn ghost small hidden" type="button">Clear history</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span id="ytdlpStatus">yt-dlp: starting…</span>
+    <button id="updateBtn" class="link" type="button">Update yt-dlp</button>
+    <span class="spacer"></span>
+    <span id="appVersion" class="muted"></span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

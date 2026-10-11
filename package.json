@@ -1,0 +1,80 @@
+{
+  "name": "grabbit",
+  "productName": "Grabbit",
+  "version": "1.0.0",
+  "description": "Grab videos and audio as MP4, MP3 or WAV. A friendly desktop app powered by yt-dlp.",
+  "author": "direk james",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "fetch-bins": "node scripts/fetch-binaries.js",
+    "postinstall": "node scripts/fetch-binaries.js",
+    "predist": "node scripts/fetch-binaries.js",
+    "dist": "electron-builder --win --x64",
+    "pack": "electron-builder --win --x64 --dir"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.direkjames.grabbit",
+    "productName": "Grabbit",
+    "copyright": "Copyright © 2026 direk james",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": [
+          "yt-dlp.exe",
+          "deno.exe"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Grabbit",
+      "artifactName": "Grabbit-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Grabbit-Portable-${version}.${ext}"
+    }
+  }
+}
