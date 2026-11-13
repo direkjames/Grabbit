@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('grabbit', {
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   openDiscord: () => ipcRenderer.invoke('link:discord'),
+  openLink: (url) => ipcRenderer.invoke('link:open', url),
   openUpdatePage: () => ipcRenderer.invoke('update:openPage'),
   onJobEvent: listen('job:event'),
   onJobFinished: listen('job:finished'),

@@ -8,7 +8,7 @@
  */
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard, Notification, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execFile } = require('child_process');
@@ -37,6 +37,7 @@ const infoCache = new Map(); // link -> { json, at }: the preview's raw info, re
 const failedOpts = new Map(); // job id -> the download's options, so "Try again" can repeat it
 let ytdlpVer = null; // last known yt-dlp version, for the "Details" text
 const DAY_MS = 24 * 60 * 60 * 1000;
+const THEME_BG = { light: '#f6f3ee', dark: '#1b1916' }; // the window's color before the page loads
 const queue = new JobQueue({ limit: () => settings.maxConcurrent, onStart: runJob });
 
 // ---------------------------------------------------------------- tools
@@ -508,6 +509,7 @@ function registerIpc() {
     Object.assign(settings, clean);
     saveSettings();
     if ('maxConcurrent' in clean) queue.pump(); // a higher limit lets waiting downloads start now
+    if ('theme' in clean) applyTheme(); // the title bar and window color follow the app's own light/dark switch
     return true;
   });
 
@@ -702,6 +704,18 @@ function registerIpc() {
     return true;
   });
 
+  // "Open on YouTube" under a card's Details: only real web links, opened in the user's browser
+  ipcMain.handle('link:open', (_e, url) => {
+    try {
+      const u = new URL(String(url));
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+      shell.openExternal(u.href);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   ipcMain.handle('link:discord', () => {
     const url = discordUrl(); // always our own fixed link, never one sent from the window
     if (!url) return false;
@@ -718,13 +732,19 @@ function registerIpc() {
 
 // ---------------------------------------------------------------- window
 
+/** Light or dark for the title bar and the window background (the page colors itself). */
+function applyTheme() {
+  nativeTheme.themeSource = settings.theme === 'dark' ? 'dark' : 'light';
+  if (win && !win.isDestroyed()) win.setBackgroundColor(THEME_BG[settings.theme] || THEME_BG.light);
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 980,
     height: 860,
     minWidth: 720,
     minHeight: 640,
-    backgroundColor: '#14110f',
+    backgroundColor: THEME_BG[settings.theme] || THEME_BG.light,
     title: 'Grabbit',
     icon: path.join(__dirname, 'build', 'icon.png'),
     show: false,
@@ -766,6 +786,7 @@ if (!app.requestSingleInstanceLock()) {
     loadTools();
     cleanStale(path.join(app.getPath('userData'), 'temp'), 2 * DAY_MS); // leftovers from old crashes or cancels
     registerIpc();
+    applyTheme();
     createWindow();
     // Check for a newer yt-dlp a moment after launch (YouTube changes often)
     setTimeout(startupYtDlpCheck, 1500);

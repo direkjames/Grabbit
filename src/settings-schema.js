@@ -26,6 +26,7 @@ const DEFAULTS = {
   embedCoverAudio: true,  // cover art in MP3s is what people expect
   embedCoverVideo: false, // off for MP4: some editors read the picture as an extra video track
   cookiesBrowser: '',
+  theme: 'light',        // light is the default; dark is a switch in Settings
   autoUpdateYtdlp: true, // check for a newer yt-dlp when Grabbit starts
   ytdlpCheckedAt: 0,     // when that last worked (ms), so it runs at most twice a day
 };
@@ -46,6 +47,7 @@ const RULES = {
   embedCoverAudio: bool,
   embedCoverVideo: bool,
   cookiesBrowser: (v) => v === '' || COOKIE_BROWSERS.includes(v),
+  theme: (v) => v === 'light' || v === 'dark',
   autoUpdateYtdlp: bool,
   ytdlpCheckedAt: (v) => Number.isFinite(v) && v >= 0,
 };

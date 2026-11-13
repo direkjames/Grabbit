@@ -367,7 +367,7 @@ async function grab() {
 
   if (!res.ok) return showFormError(() => errText(res.code, res.error));
 
-  addJobCard(res.id, { title, mode, quality, clip: trimEnabled, playlist, count: state.info ? state.info.count : null }, res.queued);
+  addJobCard(res.id, { url, title, mode, quality, clip: trimEnabled, playlist, count: state.info ? state.info.count : null }, res.queued);
   switchTab('active');
 
   // Ready for the next link
@@ -385,30 +385,187 @@ async function grab() {
   updateTrimAvailability();
 }
 
+// ---- small inline icons, drawn in the text color
+
+const ICON_PATHS = {
+  check: '<path d="M5 12l5 5 9-10"/>',
+  alert: '<path d="M12 7v6M12 17h.01"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  list: '<path d="M6 12h12M6 7h12M6 17h7"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  chevron: '<path d="M6 9l6 6 6-6"/>',
+  external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
+};
+
+function icon(name, size = 18, width = 2.2) {
+  const span = el('span', 'ico');
+  span.setAttribute('aria-hidden', 'true');
+  // fixed markup of our own, never user input
+  span.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]}</svg>`;
+  return span;
+}
+
+/** The progress ring on a running download. It spins until a percentage is known. */
+function ringIcon() {
+  const span = el('span', 'ico');
+  span.setAttribute('aria-hidden', 'true');
+  span.innerHTML = '<svg class="ring spin" width="38" height="38" viewBox="0 0 38 38"><circle class="ring-bg" cx="19" cy="19" r="15" fill="none" stroke-width="4"/><circle class="ring-fg" cx="19" cy="19" r="15" fill="none" stroke-width="4" stroke-linecap="round" transform="rotate(-90 19 19)"/></svg>';
+  return span;
+}
+
+/** An element whose text follows the chosen language. */
+function i18nEl(tag, className, key) {
+  const node = el(tag, className);
+  node.dataset.i18n = key;
+  node.textContent = t(key);
+  return node;
+}
+
+// ---- the video link, and the button that opens it
+
+function siteOf(url) {
+  let host;
+  try {
+    host = new URL(String(url)).hostname.toLowerCase();
+  } catch {
+    return 'other';
+  }
+  const is = (d) => host === d || host.endsWith(`.${d}`);
+  if (is('youtube.com') || is('youtu.be') || is('youtube-nocookie.com')) return 'youtube';
+  if (is('tiktok.com')) return 'tiktok';
+  if (is('instagram.com') || is('instagr.am')) return 'instagram';
+  if (is('facebook.com') || is('fb.watch') || is('fb.com')) return 'facebook';
+  if (is('twitter.com') || is('x.com') || host === 't.co') return 'twitter';
+  return 'other';
+}
+
+/** "Open on YouTube", "Open on TikTok"... or "Open in browser" for any other site. */
+function openLabel(url) {
+  const site = siteOf(url);
+  return site === 'other' ? t('details.openBrowser') : t('details.open', { site: t(`site.${site}`) });
+}
+
+function copyButton(text, labelKey) {
+  const b = el('button', 'btn ghost icon-only');
+  b.type = 'button';
+  b.dataset.i18nAria = labelKey;
+  b.dataset.i18nTitle = labelKey;
+  b.setAttribute('aria-label', t(labelKey));
+  b.title = t(labelKey);
+  b.append(icon('copy', 14, 2));
+  b.addEventListener('click', async () => {
+    await copyText(text);
+    b.replaceChildren(icon('check', 14, 2.6));
+    setTimeout(() => b.replaceChildren(icon('copy', 14, 2)), 1200);
+  });
+  return b;
+}
+
+/** What opens under a card's "Details": the video link, the saved file, and (failed) yt-dlp's own words. */
+function detailsPanel({ url, file, raw }) {
+  const panel = el('div', 'job-panel');
+  if (url) {
+    panel.append(i18nEl('p', 'kv-label', 'details.link'));
+    const value = el('div', 'kv-value', url);
+    value.title = url;
+    const row = el('div', 'kv-row kv-actions');
+    const open = el('button', 'btn small outline');
+    open.type = 'button';
+    open.dataset.openUrl = url;
+    open.append(icon('external', 14, 2.2), el('span', 'lbl', openLabel(url)));
+    open.addEventListener('click', () => api.openLink(url));
+    row.append(open, copyButton(url, 'details.copyLink'));
+    panel.append(value, row);
+  }
+  if (file) {
+    panel.append(i18nEl('p', 'kv-label', 'details.file'));
+    const value = el('div', 'kv-value', file);
+    value.title = file;
+    panel.append(value);
+  }
+  if (raw) {
+    panel.append(i18nEl('p', 'kv-label', 'details.raw'), el('pre', null, raw));
+    const copy = i18nEl('button', 'btn ghost small', 'job.copyDetails');
+    copy.type = 'button';
+    copy.addEventListener('click', async () => {
+      await copyText(raw);
+      copy.textContent = t('job.copied');
+      setTimeout(() => { copy.textContent = t('job.copyDetails'); }, 1500);
+    });
+    panel.append(copy);
+  }
+  return panel;
+}
+
+/** The "Details" link with its small arrow. `quiet` = grey, for secondary links like Dismiss. */
+function moreButton(key, quiet) {
+  const b = el('button', quiet ? 'job-more quiet' : 'job-more');
+  b.type = 'button';
+  b.append(i18nEl('span', null, key), icon('chevron', 12, 2.6));
+  return b;
+}
+
+/** Open or close a card's Details box. `info` = { el, more, url, file, raw, panel }. */
+function toggleDetails(info, force) {
+  const open = force !== undefined ? force : info.more.getAttribute('aria-expanded') !== 'true';
+  info.more.setAttribute('aria-expanded', String(open));
+  if (info.panel) { info.panel.remove(); info.panel = null; }
+  if (open) {
+    info.panel = detailsPanel({ url: info.url, file: info.file, raw: info.raw });
+    info.el.appendChild(info.panel);
+  }
+}
+
+// ---- download cards
+
 function setJobStatus(job, fn) {
   job.statusFn = fn;
   job.status.textContent = fn();
 }
 
+/** running | waiting | queued | done | error | cancelled: drives the colors and the round icon. */
+function setJobState(job, name) {
+  job.el.classList.remove('running', 'waiting', 'queued', 'done', 'error', 'cancelled');
+  job.el.classList.add(name);
+  const kind = { running: 'ring', waiting: 'clock', queued: 'list', done: 'check', error: 'alert', cancelled: 'x' }[name];
+  if (job.iconKind === kind) return;
+  job.iconKind = kind;
+  job.ico.replaceChildren(kind === 'ring' ? ringIcon() : icon(kind));
+  job.ring = job.ico.querySelector('.ring');
+}
+
 function addJobCard(id, meta, queued) {
-  const li = el('li', queued ? 'job queued' : 'job');
+  const li = el('li', 'job');
+  const ico = el('div', 'job-ico');
   const top = el('div', 'job-top');
   top.append(el('p', 'job-title', meta.title), el('span', 'chip', chipText(meta.mode, meta.quality, meta.clip)));
-  const bar = el('div', queued ? 'bar' : 'bar indeterminate');
+  const status = el('p', 'job-status');
+  const bar = el('div', 'bar');
   bar.appendChild(el('span'));
-  const bottom = el('div', 'job-bottom');
-  const status = el('span', 'job-status');
+  const body = el('div', 'job-body');
+  body.append(top, status, bar);
+
   const action = i18nButton('job.cancel', 'btn ghost small');
-  const job = { el: li, bar, status, action, meta, statusFn: null, finished: false };
+  const more = moreButton('job.details');
+  const side = el('div', 'job-side');
+  side.append(action, more);
+  const main = el('div', 'job-main');
+  main.append(ico, body, side);
+  li.append(main);
+  li.title = meta.title;
+
+  const job = { el: li, ico, bar, status, action, side, more, meta, url: meta.url, file: null, raw: null, panel: null, statusFn: null, finished: false, iconKind: null, ring: null };
   action.addEventListener('click', () => {
     action.disabled = true;
     job.cancelling = true; // from now on ignore late progress from the dying download
     setJobStatus(job, () => t('job.cancelling'));
     api.cancel(id);
   });
-  bottom.append(status, action);
-  li.append(top, bar, bottom);
-  li.title = meta.title;
+  more.addEventListener('click', () => toggleDetails(job));
+
+  setJobState(job, queued ? 'queued' : 'running');
+  bar.classList.toggle('indeterminate', !queued);
   setJobStatus(job, () => t(queued ? 'job.queued' : 'job.starting'));
 
   $('jobList').prepend(li);
@@ -422,16 +579,22 @@ function onJobEvent(ev) {
 
   if (ev.type === 'started') {
     // its turn came: it was waiting in line
-    job.el.classList.remove('queued');
+    setJobState(job, 'running');
     job.bar.classList.add('indeterminate');
     setJobStatus(job, () => t('job.starting'));
   } else if (ev.type === 'progress') {
+    setJobState(job, 'running'); // also brings the ring back after a bot-check wait
     const percent = ev.percent;
     if (percent !== null) {
       job.bar.classList.remove('indeterminate');
       job.bar.firstChild.style.width = `${percent}%`;
+      if (job.ring) {
+        job.ring.classList.remove('spin');
+        job.ring.querySelector('.ring-fg').style.strokeDashoffset = String(94.25 * (1 - percent / 100));
+      }
     } else {
       job.bar.classList.add('indeterminate');
+      if (job.ring) job.ring.classList.add('spin');
     }
     setJobStatus(job, () => {
       const parts = [];
@@ -446,10 +609,12 @@ function onJobEvent(ev) {
     });
   } else if (ev.type === 'waiting') {
     // YouTube asked for a bot check: Grabbit waits, then tries again by itself
-    job.bar.classList.add('indeterminate');
+    setJobState(job, 'waiting');
     setJobStatus(job, () => t('job.botWait', { s: ev.seconds, n: ev.attempt, of: ev.of }));
   } else if (ev.type === 'postprocess' && ev.status === 'started') {
+    setJobState(job, 'running');
     job.bar.classList.add('indeterminate');
+    if (job.ring) job.ring.classList.add('spin');
     setJobStatus(job, () => t(PP_LABELS[ev.name] || 'pp.finish'));
   }
 }
@@ -458,9 +623,17 @@ function onJobFinished(res) {
   const job = state.jobs.get(res.id);
   if (!job) return;
   job.bar.classList.remove('indeterminate');
-  job.el.classList.remove('queued');
-  job.el.classList.add(res.status);
-  job.action.disabled = false;
+  setJobState(job, res.status);
+  job.file = res.files[res.files.length - 1] || null;
+  job.raw = res.status === 'error' ? res.details : null;
+
+  const dismiss = moreButton('job.dismiss', true);
+  dismiss.lastChild.remove(); // no arrow on Dismiss
+  dismiss.addEventListener('click', () => {
+    job.el.remove();
+    state.jobs.delete(res.id);
+    refreshCounts();
+  });
 
   if (res.status === 'done') {
     const n = res.files.length;
@@ -469,43 +642,34 @@ function onJobFinished(res) {
       if (res.skipped) msg += ` · ${t('job.skipped', { n: res.skipped })}`;
       return msg;
     });
-    const file = res.files[res.files.length - 1];
     const show = i18nButton('job.showFile', 'btn ghost small');
     show.addEventListener('click', () => {
-      if (file) api.showFile(file);
+      if (job.file) api.showFile(job.file);
       else api.openFolder();
     });
-    job.action.replaceWith(show);
-    job.action = show;
-  } else {
-    setJobStatus(job, () => (res.status === 'cancelled' ? t('job.cancelled') : errText(res.errorCode, res.error)));
-    const dismiss = i18nButton('job.dismiss', 'btn ghost small');
-    dismiss.addEventListener('click', () => {
+    job.side.replaceChildren(show, job.more);
+  } else if (res.status === 'error') {
+    setJobStatus(job, () => errText(res.errorCode, res.error));
+    // Try again: the app repeats the same download and picks up a half-finished file where it stopped
+    const retry = i18nButton('job.retry', 'btn small outline');
+    retry.addEventListener('click', async () => {
+      retry.disabled = true;
+      const r = await api.retry(res.id);
+      if (!r.ok) {
+        retry.disabled = false;
+        setJobStatus(job, () => errText(r.code, r.error));
+        return;
+      }
       job.el.remove();
       state.jobs.delete(res.id);
-      refreshCounts();
+      addJobCard(r.id, job.meta, r.queued);
     });
-    job.action.replaceWith(dismiss);
-    job.action = dismiss;
-    if (res.status === 'error') {
-      // Try again: the app repeats the same download and picks up a half-finished file where it stopped
-      const retry = i18nButton('job.retry', 'btn ghost small');
-      retry.addEventListener('click', async () => {
-        retry.disabled = true;
-        const r = await api.retry(res.id);
-        if (!r.ok) {
-          retry.disabled = false;
-          setJobStatus(job, () => errText(r.code, r.error));
-          return;
-        }
-        job.el.remove();
-        state.jobs.delete(res.id);
-        addJobCard(r.id, job.meta, r.queued);
-      });
-      dismiss.before(retry);
-      if (res.details) job.el.appendChild(detailsBlock(res.details));
-    }
+    job.side.replaceChildren(retry, job.more, dismiss);
+  } else {
+    setJobStatus(job, () => t('job.cancelled'));
+    job.side.replaceChildren(job.more, dismiss);
   }
+  if (job.more.getAttribute('aria-expanded') === 'true') toggleDetails(job, true); // refresh an open box with the final info
   job.finished = true;
   refreshCounts();
 
@@ -534,13 +698,16 @@ function renderHistory(history) {
   const list = $('historyList');
   list.textContent = '';
   for (const item of history || []) {
-    const li = el('li', 'job history');
+    const file = item.files && item.files[item.files.length - 1];
+    const li = el('li', 'job history done');
+    const ico = el('div', 'job-ico');
+    ico.append(icon('check'));
     const top = el('div', 'job-top');
     top.append(el('p', 'job-title', item.title), el('span', 'chip', chipText(item.mode, item.quality, false)));
-    const bottom = el('div', 'job-bottom');
-    const when = new Date(item.at);
-    bottom.appendChild(el('span', 'job-status', when.toLocaleString()));
-    const file = item.files && item.files[item.files.length - 1];
+    const body = el('div', 'job-body');
+    body.append(top, el('p', 'job-status', new Date(item.at).toLocaleString()));
+
+    const side = el('div', 'job-side');
     if (file) {
       const show = i18nButton('job.showFile', 'btn ghost small');
       show.addEventListener('click', async () => {
@@ -550,10 +717,17 @@ function renderHistory(history) {
           show.textContent = t('job.fileGone');
         }
       });
-      bottom.appendChild(show);
+      side.append(show);
     }
+    const more = moreButton('job.details');
+    side.append(more);
+    const main = el('div', 'job-main');
+    main.append(ico, body, side);
+    li.append(main);
     li.title = item.title;
-    li.append(top, bottom);
+
+    const info = { el: li, more, url: item.url, file, raw: null, panel: null };
+    more.addEventListener('click', () => toggleDetails(info));
     list.appendChild(li);
   }
   const empty = !history || history.length === 0;
@@ -665,6 +839,7 @@ function applyLanguage(lang) {
   renderUpdate();
   showFormError(state.formError);
   for (const job of state.jobs.values()) if (job.statusFn) job.status.textContent = job.statusFn();
+  document.querySelectorAll('[data-open-url] .lbl').forEach((n) => { n.textContent = openLabel(n.parentElement.dataset.openUrl); });
   renderHistory(state.settings.history);
   $('setVersion').textContent = t('set.version', { v: state.appVersion });
 }
@@ -703,9 +878,15 @@ function closeHelp() {
   }
 }
 
+/** Light is the default; dark is an explicit switch in Settings (it does not follow Windows). */
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+}
+
 function openSettings() {
   const s = state.settings;
   $('langSelect').value = s.language;
+  $('themeSelect').value = s.theme;
   $('parallelSelect').value = String(s.maxConcurrent);
   $('notifyChk').checked = s.notifyOnDone;
   $('soundChk').checked = s.soundOnDone;
@@ -740,6 +921,10 @@ function setupModals() {
   $('langSelect').addEventListener('change', () => {
     setSetting({ language: $('langSelect').value });
     applyLanguage(state.settings.language);
+  });
+  $('themeSelect').addEventListener('change', () => {
+    setSetting({ theme: $('themeSelect').value });
+    applyTheme(state.settings.theme);
   });
   $('parallelSelect').addEventListener('change', () => {
     const n = Number($('parallelSelect').value);
@@ -783,6 +968,7 @@ function setupModals() {
 async function init() {
   const appState = await api.getState();
   state.settings = appState.settings;
+  applyTheme(state.settings.theme);
   state.appVersion = appState.appVersion;
   state.discordConfigured = Boolean(appState.discordConfigured);
   $('discordBtn').classList.toggle('hidden', !state.discordConfigured);

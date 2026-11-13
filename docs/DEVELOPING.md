@@ -17,7 +17,10 @@ Notes for building, packaging and publishing Grabbit. For what the app does, see
 - **Languages:** English, Filipino and Cebuano (and Pirate, for fun)
 - **Built-in How to use guide** (top-right button, or press F1). It opens by itself the first time the app runs
 - **Auto-update** for Grabbit itself through GitHub Releases
-- yt-dlp updates itself on every launch, so the app keeps working when YouTube changes things
+- yt-dlp updates itself quietly at launch (at most twice a day, switchable in Settings) and the footer warns when it is old or the Deno helper is missing
+- **Details** on every download and history item: the video link (Open on YouTube / Copy link), the saved file and, for failures, yt-dlp's own messages
+- **Try again** on failed downloads, automatic retry after a YouTube bot check, download progress on the taskbar button
+- **Light and dark mode** (light by default, a switch in Settings)
 
 Grabbit is a friendly front end for [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org) and [Deno](https://deno.com), which are all bundled inside the app. Your friends don't install anything else.
 
@@ -160,10 +163,12 @@ Grabbit uses one picture in two places, and one command swaps both.
 
 **1. Make the picture.** A **square PNG**, ideally **512×512 or 1024×1024** (256×256 is the minimum). A transparent background is fine. Keep the design simple and bold, because Windows also shows it very small (taskbar, shortcuts). If you have a `.jpg` or `.ico`, open it in an editor (Paint, Photoshop, Canva, Figma...) and export it as PNG. Renaming the file does not work.
 
+The current icon is drawn in `build/icon.svg` (a clay tile with the cream bunny). To change it, edit that file and export it to a 1024×1024 PNG with a transparent background (for example in headless Edge: `msedge --headless=new --default-background-color=00000000 --window-size=1024,1024 --screenshot=icon.png file:///path/to/build/icon.svg`).
+
 **2. Swap it in.** Open the VS Code terminal in the project folder and run:
 
 ```
-npm run icon -- C:\Users\you\Pictures\my-icon.png
+npm run icon -- C:UsersyouPicturesmy-icon.png
 ```
 
 (Tip: after typing `npm run icon -- ` you can drag the picture from File Explorer into the terminal to paste its full path.) The command checks the picture, tells you if something is wrong (not a PNG, not square, too small), and copies it to the two places below.
@@ -176,24 +181,27 @@ npm run icon -- C:\Users\you\Pictures\my-icon.png
 |---|---|
 | `build/icon.png` | The `.exe` files, the installer, desktop and Start menu shortcuts, taskbar and window icon |
 | `renderer/assets/icon.png` | The logo in the top-left corner inside the app (the app rounds its corners itself) |
+| `renderer/assets/bunny.svg` | The little bunny that peeks over the link card (not set by the icon command) |
 
-If you'd rather do it by hand, just replace those two files with your picture, keeping the same names.
+If you'd rather do it by hand, just replace those files with your picture, keeping the same names.
 
 **If Windows still shows the old icon** after you install the new build, that's Windows' icon cache, not Grabbit. Uninstall the old version first, then install the new one. If it persists, restart "Windows Explorer" in Task Manager (or restart the PC).
 
 **To get the new icon to your friends**, bump `"version"` in `package.json` and publish a new release (see "Publishing a new version"). The auto-updater delivers it.
 
-## Changing the colors
+## Changing the colors and fonts
 
-The colors are the first lines of `renderer/styles.css`:
+All the colors are at the top of `renderer/styles.css`, in two blocks: `:root` is **light mode** (the default) and `:root[data-theme="dark"]` is **dark mode** (chosen in Settings → Appearance). Every color has the same name in both blocks, and `npm test` checks that none is missing from either.
 
 ```css
---accent: #ffd500;      /* the main accent: buttons, highlights, progress bars */
---accent-2: #ffe566;    /* a lighter shade of it: hover, links, headings */
---accent-ink: #231c00;  /* the text color on top of the accent (keep it dark for a light accent) */
+--accent: #b85a2a;      /* the main accent: the Grab button, the active tab, progress */
+--accent-2: #9f4a1e;    /* the accent used for links and text */
+--accent-ink: #ffffff;  /* the text color on top of the accent */
 ```
 
-Change those three and restart. Pick a dark `--accent-ink` for a light accent and a light one for a dark accent, so the button text stays readable.
+Change them in both blocks and restart. Keep text readable: a dark `--accent-ink` on a light accent, a light one on a dark accent.
+
+The fonts are **DM Sans** (text) and **Plus Jakarta Sans** (the Grabbit name and headings). They live in `renderer/fonts/` as `.woff2` files and are loaded by `@font-face` at the top of `styles.css`, so the app never needs the internet or installed fonts. Both are free under the SIL Open Font License.
 
 ## Changing or fixing a translation
 
