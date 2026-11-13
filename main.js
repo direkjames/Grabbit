@@ -18,6 +18,7 @@ const { DEFAULTS, MAX_PARALLEL, sanitizePatch, languageForLocale } = require('./
 const updateConfig = require('./src/update-config');
 const { discordUrl } = require('./src/links');
 const { isNewer, fetchLatestVersion } = require('./src/updates');
+const pacing = require('./src/pacing');
 
 const IS_WIN = process.platform === 'win32';
 const IS_PORTABLE = Boolean(process.env.PORTABLE_EXECUTABLE_DIR); // the "Portable" .exe
@@ -29,6 +30,8 @@ let settings = null;
 const jobs = new Map();
 let nextJobId = 1;
 let updating = false;
+let lastYoutubeStart = 0; // when the latest YouTube download was allowed to start (see pacing.js)
+const infoCache = new Map(); // link -> { json, at }: the preview's raw info, reused by the download
 const queue = new JobQueue({ limit: () => settings.maxConcurrent, onStart: runJob });
 
 // ---------------------------------------------------------------- tools
@@ -260,6 +263,11 @@ function createJob(opts) {
   const job = {
     id,
     args,
+    // If the saved preview can't be used (expired stream links...), the job retries from the link
+    fallbackArgs: opts.infoFile ? yt.buildDownloadArgs({ ...opts, infoFile: null }, tools) : null,
+    infoFile: opts.infoFile || null,
+    botTries: 0,
+    cancelWait: null, // set while the job is only waiting (pause between YouTube jobs, bot-check wait)
     title: opts.title || opts.url,
     url: opts.url,
     mode: opts.mode,
@@ -316,6 +324,29 @@ function runJob(job) {
     else status = 'error';
 
     const lastError = job.errors[job.errors.length - 1];
+
+    // Try again instead of failing: from the link if the saved preview didn't work, or after
+    // a pause if YouTube asked for a bot check. The job keeps its slot in the queue meanwhile.
+    const retry = status === 'error' ? pacing.nextRetry(job, lastError) : null;
+    if (retry) {
+      if (retry.dropInfo) {
+        fs.unlink(job.infoFile, () => {});
+        job.infoFile = null;
+        job.args = job.fallbackArgs;
+      }
+      if (retry.bot) {
+        job.botTries++;
+        send('job:event', { id, type: 'waiting', seconds: Math.round(retry.wait / 1000), attempt: job.botTries, of: pacing.BOT_RETRIES });
+      }
+      job.ended = false;
+      job.proc = null;
+      job.errors = [];
+      job.files = [];
+      later(retry.wait);
+      return;
+    }
+    if (job.infoFile) fs.unlink(job.infoFile, () => {});
+
     send('job:finished', {
       id,
       status,
@@ -342,27 +373,48 @@ function runJob(job) {
 
   job.forceEnd = () => end(-1);
 
-  let proc;
-  try {
-    proc = spawn(tools.ytdlpPath, job.args, { windowsHide: true, env: runEnv() });
-  } catch (err) {
-    job.errors.push({ message: `Could not start yt-dlp: ${err.message}`, code: 'startFail' });
-    end(-1);
-    return;
+  const launch = () => {
+    job.cancelWait = null;
+    outBuf.value = '';
+    errBuf.value = '';
+    let proc;
+    try {
+      proc = spawn(tools.ytdlpPath, job.args, { windowsHide: true, env: runEnv() });
+    } catch (err) {
+      job.errors.push({ message: `Could not start yt-dlp: ${err.message}`, code: 'startFail' });
+      end(-1);
+      return;
+    }
+    job.proc = proc;
+    if (job.cancelled) killTree(proc); // cancelled in the instant before it started
+
+    proc.stdout.setEncoding('utf8');
+    proc.stderr.setEncoding('utf8');
+    proc.stdout.on('data', (d) => { outBuf.value += d; handleChunk(outBuf); });
+    proc.stderr.on('data', (d) => { errBuf.value += d; handleChunk(errBuf); });
+
+    proc.on('error', (err) => {
+      job.errors.push({ message: `Could not start yt-dlp: ${err.message}`, code: 'startFail' });
+      if (proc.pid === undefined) end(-1); // it never started, so 'close' may never come
+    });
+    proc.on('close', (code) => end(code));
+  };
+
+  // Start after `ms` (0 = now). Cancel during the wait ends the job at once (see yt:cancel).
+  function later(ms) {
+    if (ms <= 0) return launch();
+    const timer = setTimeout(launch, ms);
+    job.cancelWait = () => { clearTimeout(timer); job.cancelWait = null; end(-1); };
   }
-  job.proc = proc;
-  if (job.cancelled) killTree(proc); // cancelled in the instant before it started
 
-  proc.stdout.setEncoding('utf8');
-  proc.stderr.setEncoding('utf8');
-  proc.stdout.on('data', (d) => { outBuf.value += d; handleChunk(outBuf); });
-  proc.stderr.on('data', (d) => { errBuf.value += d; handleChunk(errBuf); });
-
-  proc.on('error', (err) => {
-    job.errors.push({ message: `Could not start yt-dlp: ${err.message}`, code: 'startFail' });
-    if (proc.pid === undefined) end(-1); // it never started, so 'close' may never come
-  });
-  proc.on('close', (code) => end(code));
+  // YouTube downloads start a few seconds apart; other sites start right away.
+  if (yt.detectSite(job.url) === 'youtube') {
+    const startAt = pacing.youtubeStartAt(Date.now(), lastYoutubeStart);
+    lastYoutubeStart = startAt;
+    later(startAt - Date.now());
+  } else {
+    launch();
+  }
 }
 
 // ---------------------------------------------------------------- IPC
@@ -468,7 +520,13 @@ function registerIpc() {
             return;
           }
           try {
-            resolve({ ok: true, info: yt.summarizeInfo(JSON.parse(stdout), url) });
+            const info = yt.summarizeInfo(JSON.parse(stdout), url);
+            // Keep a single YouTube video's raw info so the download can skip a second lookup
+            if (info.kind === 'video' && info.site === 'youtube' && !info.isLive) {
+              infoCache.set(url.trim(), { json: stdout, at: Date.now() });
+              if (infoCache.size > 5) infoCache.delete(infoCache.keys().next().value);
+            }
+            resolve({ ok: true, info });
           } catch {
             resolve({ ok: false, error: 'Could not read the video info.', code: 'infoFail' });
           }
@@ -480,7 +538,21 @@ function registerIpc() {
   ipcMain.handle('yt:download', async (_e, opts) => {
     try {
       const trim = opts.trimEnabled ? yt.validateTrim(opts.start, opts.end, opts.duration) : null;
+      const tempDir = path.join(app.getPath('userData'), 'temp');
+      let infoFile = null;
+      const cached = infoCache.get(String(opts.url).trim());
+      infoCache.delete(String(opts.url).trim()); // one use: stream links in it expire
+      if (cached && !opts.playlist && Date.now() - cached.at < pacing.INFO_MAX_AGE_MS) {
+        try {
+          fs.mkdirSync(tempDir, { recursive: true });
+          infoFile = path.join(tempDir, `info-${Date.now()}.json`);
+          fs.writeFileSync(infoFile, cached.json);
+        } catch {
+          infoFile = null; // can't save it: the download just asks YouTube itself
+        }
+      }
       const created = createJob({
+        infoFile,
         url: opts.url,
         title: opts.title,
         mode: opts.mode,
@@ -492,7 +564,7 @@ function registerIpc() {
         cookiesBrowser: settings.cookiesBrowser,
         trim,
         outputDir: settings.outputDir,
-        tempDir: path.join(app.getPath('userData'), 'temp'),
+        tempDir,
       });
       return { ok: true, ...created };
     } catch (err) {
@@ -509,6 +581,8 @@ function registerIpc() {
       job.ended = true;
       jobs.delete(id);
       send('job:finished', { id, status: 'cancelled', files: [], error: null, errorCode: null, skipped: 0 });
+    } else if (job.cancelWait) {
+      job.cancelWait(); // only waiting, no process yet: end it now and free the slot
     } else {
       killTree(job.proc);
       // Safety net: if the process is still alive a few seconds later, force it, and finally free the slot.

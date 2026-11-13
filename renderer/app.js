@@ -412,6 +412,10 @@ function onJobEvent(ev) {
       if (ev.eta) parts.push(t('job.left', { eta: ev.eta }));
       return parts.join(' · ');
     });
+  } else if (ev.type === 'waiting') {
+    // YouTube asked for a bot check: Grabbit waits, then tries again by itself
+    job.bar.classList.add('indeterminate');
+    setJobStatus(job, () => t('job.botWait', { s: ev.seconds, n: ev.attempt, of: ev.of }));
   } else if (ev.type === 'postprocess' && ev.status === 'started') {
     job.bar.classList.add('indeterminate');
     setJobStatus(job, () => t(PP_LABELS[ev.name] || 'pp.finish'));

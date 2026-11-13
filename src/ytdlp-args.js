@@ -137,6 +137,8 @@ function baseArgs(tools, { url, cookiesBrowser } = {}) {
   if (url && COOKIE_BROWSERS.includes(cookiesBrowser) && detectSite(url) !== 'youtube') {
     args.push('--cookies-from-browser', cookiesBrowser);
   }
+  // One second between YouTube's page requests: less bot-like, costs a video only a few seconds.
+  if (url && detectSite(url) === 'youtube') args.push('--sleep-requests', '1');
   return args;
 }
 
@@ -160,7 +162,8 @@ function buildInfoArgs({ url, playlist, cookiesBrowser }, tools) {
  * Arguments for a download.
  * opts: { url, mode: 'mp4'|'mp3'|'wav', quality, editorFriendly,
  *         playlist, trim: {start,end}|null, outputDir, tempDir,
- *         saveThumbnail, embedCover, cookiesBrowser }
+ *         saveThumbnail, embedCover, cookiesBrowser,
+ *         infoFile (optional: a saved preview, single videos only) }
  */
 function buildDownloadArgs(opts, tools) {
   const url = validateUrl(opts.url);
@@ -243,7 +246,9 @@ function buildDownloadArgs(opts, tools) {
     args.push('--no-playlist', '-o', `%(title).150B [%(id)s]${res}.%(ext)s`);
   }
 
-  args.push('--', url);
+  // With a saved preview (-J output) yt-dlp doesn't ask YouTube about the video a second time.
+  if (opts.infoFile) args.push('--load-info-json', opts.infoFile);
+  else args.push('--', url);
   return args;
 }
 
