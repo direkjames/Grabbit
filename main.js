@@ -8,19 +8,23 @@
  */
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard, Notification, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard, Notification, nativeTheme, screen, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn, execFile } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
 const yt = require('./src/ytdlp-args');
 const { JobQueue } = require('./src/queue');
-const { DEFAULTS, MAX_PARALLEL, sanitizePatch, languageForLocale } = require('./src/settings-schema');
+const { DEFAULTS, MAX_PARALLEL, sanitizePatch, sanitizeHistory, languageForLocale } = require('./src/settings-schema');
 const updateConfig = require('./src/update-config');
 const { discordUrl } = require('./src/links');
 const { isNewer, fetchLatestVersion } = require('./src/updates');
 const pacing = require('./src/pacing');
 const health = require('./src/health');
 const { cleanStale } = require('./src/tempclean');
+const { createLog } = require('./src/applog');
+const { saveJson, loadJson } = require('./src/json-file');
+const { fitBounds } = require('./src/windowstate');
+const { pathToFileURL } = require('url');
 
 const IS_WIN = process.platform === 'win32';
 const IS_PORTABLE = Boolean(process.env.PORTABLE_EXECUTABLE_DIR); // the "Portable" .exe
@@ -39,6 +43,20 @@ let ytdlpVer = null; // last known yt-dlp version, for the "Details" text
 const DAY_MS = 24 * 60 * 60 * 1000;
 const THEME_BG = { light: '#f6f3ee', dark: '#1b1916' }; // the window's color before the page loads
 const queue = new JobQueue({ limit: () => settings.maxConcurrent, onStart: runJob });
+
+// A small log in %APPDATA%\Grabbit\logs for things that go wrong inside the app (no links, no personal data).
+let logger = null;
+const log = {
+  info: (m) => (logger ||= createLog(path.join(app.getPath('userData'), 'logs'))).info(m),
+  warn: (m) => (logger ||= createLog(path.join(app.getPath('userData'), 'logs'))).warn(m),
+  error: (m, err) => (logger ||= createLog(path.join(app.getPath('userData'), 'logs'))).error(m, err),
+};
+// A stray error must be written down, not silently kill or freeze the app.
+process.on('uncaughtException', (err) => log.error('uncaughtException', err));
+process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
+
+const RENDERER_INDEX = path.join(__dirname, 'renderer', 'index.html');
+const RENDERER_URL = pathToFileURL(RENDERER_INDEX).href;
 
 // ---------------------------------------------------------------- tools
 
@@ -76,7 +94,7 @@ function resolveYtDlp() {
       fs.copyFileSync(bundled, userCopy);
     }
   } catch (err) {
-    console.error('Could not copy yt-dlp:', err);
+    log.error('Could not copy yt-dlp', err);
   }
   if (fs.existsSync(userCopy)) return { path: userCopy, updatable: true };
   if (fs.existsSync(bundled)) return { path: bundled, updatable: false };
@@ -179,7 +197,7 @@ function loadUpdater() {
   try {
     updater = require('electron-updater').autoUpdater;
   } catch (err) {
-    console.error('electron-updater is not installed:', err);
+    log.error('electron-updater is not installed', err);
     return null;
   }
   const { config } = updateConfig;
@@ -194,7 +212,7 @@ function loadUpdater() {
   });
   updater.on('update-downloaded', (info) => setUpdate({ state: 'ready', version: info.version }));
   updater.on('error', (err) => {
-    console.error('Update error:', err);
+    log.error('Update error', err);
     setUpdate({ state: 'error' });
   });
   return updater;
@@ -219,7 +237,7 @@ async function checkForUpdates() {
       else await u.checkForUpdates();
     }
   } catch (err) {
-    console.error('Update check failed:', err);
+    log.error('Update check failed', err);
     setUpdate({ state: 'error' });
   } finally {
     updateBusy = false;
@@ -237,29 +255,24 @@ function defaultOutputDir() {
 }
 
 function loadSettings() {
-  let saved = {};
-  try {
-    saved = JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) || {};
-  } catch {
-    saved = {};
-  }
+  const loaded = loadJson(settingsFile());
+  const saved = loaded.data;
+  if (loaded.note) log.warn(`settings: ${loaded.note}`);
   settings = {
     ...DEFAULTS,
     language: languageForLocale(app.getLocale()),
     ...sanitizePatch(saved), // a damaged or edited settings file can't break anything
     outputDir: typeof saved.outputDir === 'string' && saved.outputDir ? saved.outputDir : defaultOutputDir(),
-    history: Array.isArray(saved.history) ? saved.history : [],
+    history: sanitizeHistory(saved.history),
   };
 }
 
 function saveSettings() {
   try {
     fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
-    const tmp = `${settingsFile()}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(settings, null, 2));
-    fs.renameSync(tmp, settingsFile());
+    saveJson(settingsFile(), settings);
   } catch (err) {
-    console.error('Could not save settings:', err);
+    log.error('Could not save settings', err);
   }
 }
 
@@ -270,6 +283,17 @@ function addHistory(entry) {
 }
 
 // ---------------------------------------------------------------- jobs
+
+/** Same as killTree but waits for it, for the moment Grabbit is closing (the app must not exit first). */
+function killTreeSync(proc) {
+  if (!proc || proc.exitCode !== null) return;
+  try {
+    if (IS_WIN) execFileSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true, timeout: 5000, stdio: 'ignore' });
+    else proc.kill('SIGTERM');
+  } catch {
+    try { proc.kill(); } catch { /* already gone */ }
+  }
+}
 
 function killTree(proc) {
   if (!proc || proc.exitCode !== null) return;
@@ -343,7 +367,7 @@ function runJob(job) {
       const line = buf.slice(0, idx);
       buf = buf.slice(idx + 1);
       if (isErr && line.trim()) {
-        job.raw.push(line.trim()); // yt-dlp's own words, kept for "Details"
+        job.raw.push(line.trim().slice(0, 2000)); // yt-dlp's own words, kept for "Details"
         if (job.raw.length > 80) job.raw.shift();
       }
       if (yt.SOLVER_FAIL.test(line)) job.solverFailed = true;
@@ -357,7 +381,7 @@ function runJob(job) {
       }
       if (!job.cancelled) send('job:event', { id, ...ev }); // after Cancel, stray progress must not bring the card back to life
     }
-    buffered.value = buf;
+    buffered.value = buf.length > 65536 ? buf.slice(-4096) : buf; // a process that never ends a line can't fill memory
   };
 
   // Runs exactly once per job, however the process ends.
@@ -488,8 +512,22 @@ function runJob(job) {
 
 // ---------------------------------------------------------------- IPC
 
+/** True only when the message comes from Grabbit's own page (never from anything else a window might load). */
+function trusted(e) {
+  const url = e && e.senderFrame && e.senderFrame.url ? String(e.senderFrame.url).split(/[?#]/)[0] : '';
+  return url === RENDERER_URL;
+}
+
 function registerIpc() {
-  ipcMain.handle('app:getState', async () => ({
+  const handle = (channel, fn) => ipcMain.handle(channel, (e, ...args) => {
+    if (!trusted(e)) {
+      log.warn(`ignored a message on "${channel}" from an unexpected page`);
+      return null;
+    }
+    return fn(e, ...args);
+  });
+
+  handle('app:getState', async () => ({
     appVersion: app.getVersion(),
     settings: { ...settings },
     tools: {
@@ -504,7 +542,7 @@ function registerIpc() {
     discordConfigured: Boolean(discordUrl()),
   }));
 
-  ipcMain.handle('settings:set', (_e, patch) => {
+  handle('settings:set', (_e, patch) => {
     const clean = sanitizePatch(patch);
     Object.assign(settings, clean);
     saveSettings();
@@ -513,7 +551,7 @@ function registerIpc() {
     return true;
   });
 
-  ipcMain.handle('dialog:chooseFolder', async (_e, title) => {
+  handle('dialog:chooseFolder', async (_e, title) => {
     const res = await dialog.showOpenDialog(win, {
       title: typeof title === 'string' ? title.slice(0, 120) : 'Choose where Grabbit saves files',
       defaultPath: settings.outputDir,
@@ -525,13 +563,13 @@ function registerIpc() {
     return settings.outputDir;
   });
 
-  ipcMain.handle('shell:openFolder', async () => {
+  handle('shell:openFolder', async () => {
     fs.mkdirSync(settings.outputDir, { recursive: true });
     return shell.openPath(settings.outputDir);
   });
 
-  ipcMain.handle('shell:showFile', async (_e, filePath) => {
-    if (typeof filePath === 'string' && fs.existsSync(filePath)) {
+  handle('shell:showFile', async (_e, filePath) => {
+    if (typeof filePath === 'string' && filePath.length < 1000 && path.isAbsolute(filePath) && fs.existsSync(filePath)) {
       shell.showItemInFolder(filePath);
       return true;
     }
@@ -539,13 +577,13 @@ function registerIpc() {
   });
 
   // Electron 44+ makes clipboard reads return a Promise; Promise.resolve works with both old and new.
-  ipcMain.handle('clipboard:read', async () => String((await Promise.resolve(clipboard.readText())) || '').trim().slice(0, 2048));
+  handle('clipboard:read', async () => String((await Promise.resolve(clipboard.readText())) || '').trim().slice(0, 2048));
 
   // A desktop notification when a grab finishes. Only shown while Grabbit is in the
   // background (in the foreground the download card already says it), and the taskbar
   // button flashes until the user comes back. Grabbit plays its own chime, so the
   // notification itself is silent.
-  ipcMain.handle('notify:show', (_e, payload) => {
+  handle('notify:show', (_e, payload) => {
     if (!settings.notifyOnDone || !win || win.isDestroyed() || win.isFocused()) return false;
     const { title, body } = payload || {};
     win.flashFrame(true);
@@ -564,7 +602,8 @@ function registerIpc() {
     return true;
   });
 
-  ipcMain.handle('yt:info', async (_e, { url, playlist }) => {
+  handle('yt:info', async (_e, payload) => {
+    const { url, playlist } = payload && typeof payload === 'object' ? payload : {};
     let args;
     try {
       args = yt.buildInfoArgs({ url, playlist, cookiesBrowser: settings.cookiesBrowser }, tools);
@@ -596,7 +635,7 @@ function registerIpc() {
           try {
             const info = yt.summarizeInfo(JSON.parse(stdout), url);
             // Keep a single YouTube video's raw info so the download can skip a second lookup
-            if (info.kind === 'video' && info.site === 'youtube' && !info.isLive) {
+            if (info.kind === 'video' && info.site === 'youtube' && !info.isLive && stdout.length < 8 * 1024 * 1024) {
               infoCache.set(url.trim(), { json: stdout, at: Date.now() });
               if (infoCache.size > 5) infoCache.delete(infoCache.keys().next().value);
             }
@@ -609,7 +648,7 @@ function registerIpc() {
     });
   });
 
-  ipcMain.handle('yt:download', async (_e, opts) => {
+  handle('yt:download', async (_e, opts) => {
     try {
       const trim = opts.trimEnabled ? yt.validateTrim(opts.start, opts.end, opts.duration) : null;
       const tempDir = path.join(app.getPath('userData'), 'temp');
@@ -646,7 +685,7 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('yt:retry', (_e, id) => {
+  handle('yt:retry', (_e, id) => {
     const opts = failedOpts.get(id);
     if (!opts) return { ok: false, error: 'Could not try again. Paste the link again.', code: null };
     try {
@@ -659,7 +698,7 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('yt:cancel', (_e, id) => {
+  handle('yt:cancel', (_e, id) => {
     const job = jobs.get(id);
     if (!job) return false;
     job.cancelled = true;
@@ -682,30 +721,30 @@ function registerIpc() {
     return true;
   });
 
-  ipcMain.handle('history:clear', () => {
+  handle('history:clear', () => {
     settings.history = [];
     saveSettings();
     return true;
   });
 
-  ipcMain.handle('ytdlp:update', () => {
+  handle('ytdlp:update', () => {
     updateYtDlp();
     return true;
   });
 
-  ipcMain.handle('update:check', () => {
+  handle('update:check', () => {
     checkForUpdates();
     return true;
   });
 
-  ipcMain.handle('update:install', () => {
+  handle('update:install', () => {
     if (updateState.state !== 'ready' || !updater) return false;
     updater.quitAndInstall(true, true); // silent install, then reopen Grabbit
     return true;
   });
 
   // "Open on YouTube" under a card's Details: only real web links, opened in the user's browser
-  ipcMain.handle('link:open', (_e, url) => {
+  handle('link:open', (_e, url) => {
     try {
       const u = new URL(String(url));
       if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
@@ -716,14 +755,14 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('link:discord', () => {
+  handle('link:discord', () => {
     const url = discordUrl(); // always our own fixed link, never one sent from the window
     if (!url) return false;
     shell.openExternal(url);
     return true;
   });
 
-  ipcMain.handle('update:openPage', () => {
+  handle('update:openPage', () => {
     if (!updateConfig.isConfigured()) return false;
     shell.openExternal(updateConfig.releasesUrl());
     return true;
@@ -738,12 +777,18 @@ function applyTheme() {
   if (win && !win.isDestroyed()) win.setBackgroundColor(THEME_BG[settings.theme] || THEME_BG.light);
 }
 
+const WINDOW_DEFAULTS = { width: 980, height: 860, minWidth: 720, minHeight: 640 };
+const windowFile = () => path.join(app.getPath('userData'), 'window.json');
+
 function createWindow() {
+  const saved = loadJson(windowFile()).data;
+  const bounds = fitBounds(saved, screen.getAllDisplays().map((d) => d.workArea), WINDOW_DEFAULTS);
   win = new BrowserWindow({
-    width: 980,
-    height: 860,
-    minWidth: 720,
-    minHeight: 640,
+    width: bounds.width,
+    height: bounds.height,
+    ...(bounds.x !== undefined ? { x: bounds.x, y: bounds.y } : {}),
+    minWidth: WINDOW_DEFAULTS.minWidth,
+    minHeight: WINDOW_DEFAULTS.minHeight,
     backgroundColor: THEME_BG[settings.theme] || THEME_BG.light,
     title: 'Grabbit',
     icon: path.join(__dirname, 'build', 'icon.png'),
@@ -754,22 +799,62 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      devTools: !app.isPackaged, // no developer tools in the shipped app
     },
   });
+  if (bounds.maximized) win.maximize();
 
   win.once('ready-to-show', () => win.show());
   win.on('focus', () => win.flashFrame(false));
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.loadFile(RENDERER_INDEX);
 
-  // Never navigate away from the app; open real web links in the browser
-  win.webContents.on('will-navigate', (e) => e.preventDefault());
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https:\/\//i.test(url)) shell.openExternal(url);
-    return { action: 'deny' };
+  // Remember size and place (saved a moment after the last change, and when closing)
+  let saveTimer = null;
+  const saveBounds = () => {
+    if (!win || win.isDestroyed()) return;
+    try {
+      saveJson(windowFile(), { ...win.getNormalBounds(), maximized: win.isMaximized() });
+    } catch (err) {
+      log.error('Could not save the window position', err);
+    }
+  };
+  const later = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveBounds, 600); };
+  win.on('resize', later);
+  win.on('move', later);
+  win.on('close', saveBounds);
+
+  // If the page itself crashes, say so in the log and bring it back once instead of leaving a blank window
+  let reloaded = false;
+  win.webContents.on('render-process-gone', (_e, details) => {
+    log.error(`the window's page stopped (${details.reason}, code ${details.exitCode})`);
+    if (!reloaded && details.reason !== 'clean-exit' && win && !win.isDestroyed()) {
+      reloaded = true;
+      win.reload();
+    }
   });
 }
 
-if (!app.requestSingleInstanceLock()) {
+/** Rules for every web page Electron creates, so nothing can navigate away, open windows, or ask for permissions. */
+function lockDownWebContents() {
+  app.on('web-contents-created', (_e, contents) => {
+    contents.on('will-attach-webview', (e) => e.preventDefault());
+    contents.on('will-navigate', (e) => e.preventDefault()); // never navigate away from the app
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https:\/\//i.test(url)) shell.openExternal(url); // real web links open in the user's browser
+      return { action: 'deny' };
+    });
+  });
+  // The window needs nothing from the system except copying text to the clipboard
+  const allowed = (permission) => permission === 'clipboard-sanitized-write';
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed(permission)));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed(permission));
+}
+
+// The shipped app can't be steered from the outside: no remote debugging or inspector switches.
+const DEBUG_SWITCHES = ['remote-debugging-port', 'remote-debugging-pipe', 'inspect', 'inspect-brk', 'inspect-port'];
+const debugRequested = app.isPackaged && DEBUG_SWITCHES.some((name) => app.commandLine.hasSwitch(name));
+
+if (debugRequested || !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -782,6 +867,8 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     if (IS_WIN) app.setAppUserModelId('com.direkjames.grabbit');
     Menu.setApplicationMenu(null);
+    lockDownWebContents();
+    app.on('child-process-gone', (_e, details) => log.error(`a helper process stopped (${details.type}: ${details.reason})`));
     loadSettings();
     loadTools();
     cleanStale(path.join(app.getPath('userData'), 'temp'), 2 * DAY_MS); // leftovers from old crashes or cancels
@@ -798,7 +885,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     for (const job of jobs.values()) {
       job.cancelled = true;
-      killTree(job.proc);
+      killTreeSync(job.proc);
     }
     // saved previews are only useful for the next few minutes
     cleanStale(path.join(app.getPath('userData'), 'temp'), 0, { match: /^info-.*\.json$/ });

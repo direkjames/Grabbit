@@ -62,6 +62,32 @@ function sanitizePatch(patch) {
   return clean;
 }
 
+/**
+ * The saved download history comes from a file on disk, which anyone (or a
+ * crash) could have changed: keep only well-formed entries, cut every text to a
+ * sane length, and never more than 50.
+ */
+function sanitizeHistory(list) {
+  if (!Array.isArray(list)) return [];
+  const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const out = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const at = str(item.at, 40);
+    if (Number.isNaN(Date.parse(at))) continue;
+    out.push({
+      title: str(item.title, 300) || str(item.url, 300) || 'Untitled',
+      url: str(item.url, 2048),
+      mode: MODES.includes(item.mode) ? item.mode : 'mp4',
+      quality: str(item.quality, 12),
+      files: Array.isArray(item.files) ? item.files.filter((f) => typeof f === 'string').slice(0, 200).map((f) => f.slice(0, 1000)) : [],
+      at,
+    });
+    if (out.length >= 50) break;
+  }
+  return out;
+}
+
 /** Pick the first-run language from the computer's language (en-PH stays English). */
 function languageForLocale(locale) {
   const l = String(locale || '').toLowerCase();
@@ -71,4 +97,4 @@ function languageForLocale(locale) {
   return 'en';
 }
 
-module.exports = { LANGUAGES, MAX_PARALLEL, DEFAULTS, sanitizePatch, languageForLocale };
+module.exports = { LANGUAGES, MAX_PARALLEL, DEFAULTS, sanitizePatch, sanitizeHistory, languageForLocale };

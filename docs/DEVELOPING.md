@@ -143,7 +143,14 @@ grabbit/
 ├─ src/settings-schema.js  Which settings exist and what values are allowed
 ├─ src/update-config.js    Your GitHub username/repo for auto-update
 ├─ src/updates.js          Version check used by the Portable version
+├─ src/pacing.js           Waits and retries after a YouTube bot check
+├─ src/health.js           yt-dlp age check and the text under "Details"
+├─ src/applog.js           The small app log (logs\grabbit.log)
+├─ src/json-file.js        Saves settings safely (.bak) and recovers a damaged file
+├─ src/windowstate.js      Remembers the window's size and place
+├─ src/tempclean.js        Clears old half-finished downloads
 ├─ scripts/set-icon.js     Swaps the app icon (npm run icon)
+├─ scripts/checksum.js     Checks yt-dlp and Deno downloads against their SHA-256
 ├─ renderer/               The interface (HTML, CSS, JS)
 │  └─ i18n.js              All the text in English, Filipino, Cebuano and Pirate
 ├─ scripts/fetch-binaries.js  Downloads yt-dlp.exe and deno.exe into bin/
@@ -155,7 +162,23 @@ grabbit/
 ## Where things are saved
 
 - Downloads: `Downloads\Grabbit` by default (change it in the app)
-- Settings, history, the updatable yt-dlp copy and temp files: `%APPDATA%\Grabbit`
+- `%APPDATA%\Grabbit` holds everything else:
+  - `settings.json` (settings and history). Every save keeps the last good copy as `settings.json.bak`. If the file is ever damaged, Grabbit keeps it as `settings.corrupt.json`, uses the backup and writes a line in the log, instead of quietly starting over.
+  - `window.json`: the window's size and place (ignored if that place is now off every screen, for example an unplugged monitor).
+  - `logs\grabbit.log`: a small log of things that went wrong inside the app (a crash, an update that failed, a settings file that could not be read). At most 1 MB plus one older copy, and no links or personal folders in it. If something is odd, this is the first place to look.
+  - `bin\` (the updatable yt-dlp) and `temp\` (half-finished downloads, cleaned after 2 days)
+
+## Safety and hardening (2.0.0)
+
+What was checked and what the app does about it:
+
+- **The window can't reach the computer.** The page runs sandboxed with context isolation, a strict content policy (no inline scripts, no network from the page, no frames, forms or workers), no developer tools in the shipped app, no permissions except copying text, no navigation away, and no extra windows. Every message from the page to the app is checked to come from Grabbit's own page.
+- **Locked-down app file (Electron fuses, set in `package.json` under `build.electronFuses`).** `ELECTRON_RUN_AS_NODE` and `NODE_OPTIONS` do nothing, `--inspect` is off, and the app only loads from its own `app.asar`, which is checked on start-up: a changed byte in the file index or in the code makes it refuse to start. The shipped app also quits at once if started with a remote-debugging switch.
+- **Links and files from outside are untrusted.** A pasted link must be http or https, is passed to yt-dlp as a separate argument after `--` (never through a shell), and every option is checked against a short list. The saved history is cleaned on load.
+- **Build tools are verified.** `npm run fetch-bins` downloads yt-dlp and Deno from their official releases and refuses a file whose SHA-256 does not match the published checksum.
+- **Closing Grabbit stops every download.** Closing the window ends yt-dlp and everything it started (tested). If Grabbit is force-killed, yt-dlp ends by itself as soon as it next writes progress; a half-finished download stays in `temp` so "Try again" can continue it.
+- **Packages.** Run `npm audit --omit=dev` before every release (it should say 0). The remaining advisories are in build tools only (electron-builder's packaging chain) and never ship in the app.
+- **Known limits.** The app is not code-signed, so Windows SmartScreen shows a warning on first run. yt-dlp can fetch its own YouTube helper script from GitHub when needed; that is yt-dlp's official, hash-checked mechanism.
 
 ## Changing the app icon
 
