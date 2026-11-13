@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('grabbit', {
   getInfo: (url, playlist) => ipcRenderer.invoke('yt:info', { url, playlist }),
   download: (opts) => ipcRenderer.invoke('yt:download', opts),
   cancel: (id) => ipcRenderer.invoke('yt:cancel', id),
+  retry: (id) => ipcRenderer.invoke('yt:retry', id),
   clearHistory: () => ipcRenderer.invoke('history:clear'),
   updateYtDlp: () => ipcRenderer.invoke('ytdlp:update'),
   notify: (title, body) => ipcRenderer.invoke('notify:show', { title, body }),

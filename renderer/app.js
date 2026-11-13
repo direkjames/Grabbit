@@ -105,6 +105,36 @@ function errText(code, fallback) {
   return code && hasText(`e.${code}`) ? t(`e.${code}`) : fallback || '';
 }
 
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const box = el('textarea');
+    box.value = text;
+    document.body.append(box);
+    box.select();
+    document.execCommand('copy');
+    box.remove();
+  }
+}
+
+/** "Details" link that opens yt-dlp's own messages, with a Copy button for bug reports. Not translated on purpose. */
+function detailsBlock(text) {
+  const wrap = el('div', 'details');
+  const toggle = i18nButton('job.details', 'link');
+  const box = el('div', 'details-box hidden');
+  const copy = i18nButton('job.copyDetails', 'btn ghost small');
+  toggle.addEventListener('click', () => box.classList.toggle('hidden'));
+  copy.addEventListener('click', async () => {
+    await copyText(text);
+    copy.textContent = t('job.copied');
+    setTimeout(() => { copy.textContent = t('job.copyDetails'); }, 1500);
+  });
+  box.append(el('pre', null, text), copy);
+  wrap.append(toggle, box);
+  return wrap;
+}
+
 function showFormError(messageFn) {
   state.formError = messageFn || null;
   const box = $('formError');
@@ -197,16 +227,18 @@ function renderQualityOptions() {
 
 // ------------------------------------------------------------ link preview
 
-function setPreview(kind, info, msg) {
-  state.preview = { kind, info: info || null, msg: msg || null };
+function setPreview(kind, info, msg, details) {
+  state.preview = { kind, info: info || null, msg: msg || null, details: details || null };
   renderPreview();
 }
 
 function renderPreview() {
-  const { kind, info, msg } = state.preview;
+  const { kind, info, msg, details } = state.preview;
   const box = $('preview');
   const thumb = $('thumb');
   box.className = `preview ${kind}`;
+  box.querySelectorAll('.details').forEach((n) => n.remove());
+  if (kind === 'error' && details) $('previewMeta').after(detailsBlock(details));
   if (kind === 'ready' && info) {
     $('previewTitle').textContent = info.title;
     const bits = [];
@@ -275,7 +307,7 @@ async function lookup() {
     }
   } else {
     state.info = null;
-    setPreview('error', null, () => errText(res.code, res.error));
+    setPreview('error', null, () => errText(res.code, res.error), res.details);
   }
   renderQualityOptions();
 }
@@ -455,6 +487,24 @@ function onJobFinished(res) {
     });
     job.action.replaceWith(dismiss);
     job.action = dismiss;
+    if (res.status === 'error') {
+      // Try again: the app repeats the same download and picks up a half-finished file where it stopped
+      const retry = i18nButton('job.retry', 'btn ghost small');
+      retry.addEventListener('click', async () => {
+        retry.disabled = true;
+        const r = await api.retry(res.id);
+        if (!r.ok) {
+          retry.disabled = false;
+          setJobStatus(job, () => errText(r.code, r.error));
+          return;
+        }
+        job.el.remove();
+        state.jobs.delete(res.id);
+        addJobCard(r.id, job.meta, r.queued);
+      });
+      dismiss.before(retry);
+      if (res.details) job.el.appendChild(detailsBlock(res.details));
+    }
   }
   job.finished = true;
   refreshCounts();
@@ -521,8 +571,8 @@ function switchTab(name) {
 
 function onYtDlpStatus(s) {
   state.ytdlp = s;
-  state.ytdlpBusy = s.state === 'checking';
-  $('updateBtn').disabled = state.ytdlpBusy;
+  state.ytdlpBusy = s.state === 'checking' && !s.quiet; // the quiet check at launch never blocks Grab
+  $('updateBtn').disabled = s.state === 'checking';
   renderYtDlp();
 }
 
@@ -541,8 +591,17 @@ function renderYtDlp() {
     case 'updated': label.textContent = t('ytdlp.updated', { v: s.version }); break;
     case 'ok': label.textContent = t('ytdlp.ok', { v }); break;
     case 'failed': label.textContent = t('ytdlp.failed', { v }); break;
+    case 'idle': label.textContent = t('ytdlp.idle', { v }); break;
     default: label.textContent = t('ytdlp.dev', { v });
   }
+  // Warnings replace the line: no YouTube helper (Deno), or an old yt-dlp that couldn't be refreshed
+  let warn = null;
+  if (s.state !== 'checking') {
+    if (s.noDeno) warn = t('ytdlp.noDeno');
+    else if (s.old && s.state !== 'ok' && s.state !== 'updated') warn = t('ytdlp.old', { v });
+  }
+  if (warn) label.textContent = warn;
+  label.classList.toggle('warn', Boolean(warn));
 }
 
 // ------------------------------------------------------------ Grabbit's own updates
@@ -651,6 +710,7 @@ function openSettings() {
   $('notifyChk').checked = s.notifyOnDone;
   $('soundChk').checked = s.soundOnDone;
   $('signinSelect').value = s.cookiesBrowser || '';
+  $('autoYtChk').checked = s.autoUpdateYtdlp;
   renderUpdate();
   showModal($('settingsOverlay'), 'settingsDone');
 }
@@ -692,6 +752,7 @@ function setupModals() {
     if ($('soundChk').checked) playChime(true);
   });
   $('soundTest').addEventListener('click', () => playChime(true));
+  $('autoYtChk').addEventListener('change', () => setSetting({ autoUpdateYtdlp: $('autoYtChk').checked }));
   $('signinSelect').addEventListener('change', () => {
     setSetting({ cookiesBrowser: $('signinSelect').value });
     state.infoKey = null; // look the current link up again with the new sign-in

@@ -19,6 +19,8 @@ const updateConfig = require('./src/update-config');
 const { discordUrl } = require('./src/links');
 const { isNewer, fetchLatestVersion } = require('./src/updates');
 const pacing = require('./src/pacing');
+const health = require('./src/health');
+const { cleanStale } = require('./src/tempclean');
 
 const IS_WIN = process.platform === 'win32';
 const IS_PORTABLE = Boolean(process.env.PORTABLE_EXECUTABLE_DIR); // the "Portable" .exe
@@ -32,6 +34,9 @@ let nextJobId = 1;
 let updating = false;
 let lastYoutubeStart = 0; // when the latest YouTube download was allowed to start (see pacing.js)
 const infoCache = new Map(); // link -> { json, at }: the preview's raw info, reused by the download
+const failedOpts = new Map(); // job id -> the download's options, so "Try again" can repeat it
+let ytdlpVer = null; // last known yt-dlp version, for the "Details" text
+const DAY_MS = 24 * 60 * 60 * 1000;
 const queue = new JobQueue({ limit: () => settings.maxConcurrent, onStart: runJob });
 
 // ---------------------------------------------------------------- tools
@@ -99,32 +104,55 @@ function runEnv() {
 function ytdlpVersion() {
   return new Promise((resolve) => {
     execFile(tools.ytdlpPath, ['--version'], { windowsHide: true, timeout: 20000, env: runEnv() }, (err, out) => {
-      resolve(err ? null : String(out).trim());
+      if (!err) ytdlpVer = String(out).trim();
+      resolve(err ? null : ytdlpVer);
     });
   });
+}
+
+/** What the footer shows about yt-dlp. `old` and `noDeno` drive the warnings. */
+function ytStatus(state, version, extra = {}) {
+  return { state, version, old: health.isOldVersion(version), noDeno: !tools.denoPath, ...extra };
+}
+
+/** A download or lookup must not start while yt-dlp.exe is being replaced. */
+async function waitWhileUpdating() {
+  for (let i = 0; updating && i < 240; i++) await new Promise((r) => setTimeout(r, 250));
 }
 
 function send(channel, payload) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
-async function updateYtDlp() {
+/** `auto` = the quiet check at launch: it never greys out the Grab button. */
+async function updateYtDlp(auto = false) {
   if (updating) return;
   if (!tools.ytdlpUpdatable) {
-    send('ytdlp:status', { state: 'dev', version: await ytdlpVersion() });
+    send('ytdlp:status', ytStatus('dev', await ytdlpVersion()));
     return;
   }
   updating = true;
-  send('ytdlp:status', { state: 'checking', version: await ytdlpVersion() });
+  send('ytdlp:status', ytStatus('checking', await ytdlpVersion(), { quiet: auto }));
   execFile(tools.ytdlpPath, ['-U'], { windowsHide: true, timeout: 120000, env: runEnv() }, async (err, stdout, stderr) => {
-    updating = false;
     const text = `${stdout}\n${stderr}`;
     const version = await ytdlpVersion();
+    updating = false;
     let state = 'ok';
     if (/Updated yt-dlp to/i.test(text)) state = 'updated';
     else if (err && !/up to date/i.test(text)) state = 'failed';
-    send('ytdlp:status', { state, version });
+    if (state !== 'failed') {
+      settings.ytdlpCheckedAt = Date.now();
+      saveSettings();
+    }
+    send('ytdlp:status', ytStatus(state, version));
   });
+}
+
+/** At launch: update quietly, at most twice a day, unless the user turned it off. */
+async function startupYtDlpCheck() {
+  const recent = Date.now() - settings.ytdlpCheckedAt < DAY_MS / 2;
+  if (settings.autoUpdateYtdlp && !recent) return updateYtDlp(true);
+  send('ytdlp:status', ytStatus(settings.autoUpdateYtdlp ? 'ok' : 'idle', await ytdlpVersion()));
 }
 
 // ---------------------------------------------------------------- Grabbit's own updates
@@ -254,6 +282,16 @@ function killTree(proc) {
   }
 }
 
+/** Windows taskbar button: filled by the running downloads' average, or "busy" while none has a percentage yet. */
+function updateTaskbar() {
+  if (!win || win.isDestroyed()) return;
+  const running = [...queue.running].map((id) => jobs.get(id)).filter(Boolean);
+  if (running.length === 0) return win.setProgressBar(-1);
+  const known = running.map((j) => j.percent).filter((p) => p !== null && p !== undefined);
+  if (known.length === 0) return win.setProgressBar(2, { mode: 'indeterminate' });
+  win.setProgressBar(Math.min(1, known.reduce((a, b) => a + b, 0) / known.length / 100));
+}
+
 /** Validate and register a download. It starts now, or waits in line if the limit is reached. */
 function createJob(opts) {
   const args = yt.buildDownloadArgs(opts, tools); // throws on a bad link, time range, etc.
@@ -267,6 +305,10 @@ function createJob(opts) {
     fallbackArgs: opts.infoFile ? yt.buildDownloadArgs({ ...opts, infoFile: null }, tools) : null,
     infoFile: opts.infoFile || null,
     botTries: 0,
+    opts: { ...opts, infoFile: null }, // kept for "Try again"
+    raw: [], // yt-dlp's own messages, shown under "Details" if the download fails
+    percent: null,
+    solverFailed: false,
     cancelWait: null, // set while the job is only waiting (pause between YouTube jobs, bot-check wait)
     title: opts.title || opts.url,
     url: opts.url,
@@ -288,20 +330,30 @@ function createJob(opts) {
 function runJob(job) {
   const { id } = job;
   send('job:event', { id, type: 'started' });
+  updateTaskbar();
 
   const outBuf = { value: '' };
   const errBuf = { value: '' };
 
-  const handleChunk = (buffered) => {
+  const handleChunk = (buffered, isErr = false) => {
     let buf = buffered.value;
     let idx;
     while ((idx = buf.indexOf('\n')) !== -1) {
       const line = buf.slice(0, idx);
       buf = buf.slice(idx + 1);
+      if (isErr && line.trim()) {
+        job.raw.push(line.trim()); // yt-dlp's own words, kept for "Details"
+        if (job.raw.length > 80) job.raw.shift();
+      }
+      if (yt.SOLVER_FAIL.test(line)) job.solverFailed = true;
       const ev = yt.parseLine(line);
       if (!ev) continue;
       if (ev.type === 'file') job.files.push(ev.path);
       if (ev.type === 'error') job.errors.push({ message: ev.message, code: ev.code });
+      if (ev.type === 'progress') {
+        job.percent = ev.percent;
+        updateTaskbar();
+      }
       if (!job.cancelled) send('job:event', { id, ...ev }); // after Cancel, stray progress must not bring the card back to life
     }
     buffered.value = buf;
@@ -316,14 +368,18 @@ function runJob(job) {
     outBuf.value += '\n';
     errBuf.value += '\n';
     handleChunk(outBuf);
-    handleChunk(errBuf);
+    handleChunk(errBuf, true);
 
     let status;
     if (job.cancelled) status = 'cancelled';
     else if (code === 0 || (job.playlist && job.files.length > 0)) status = 'done';
     else status = 'error';
 
-    const lastError = job.errors[job.errors.length - 1];
+    let lastError = job.errors[job.errors.length - 1];
+    // If YouTube's challenge helper failed, say that instead of yt-dlp's vague "format not available"
+    if (status === 'error' && job.solverFailed && !(lastError && lastError.code === 'bot')) {
+      lastError = { code: 'solver', message: yt.classifyError('challenge solving failed').message };
+    }
 
     // Try again instead of failing: from the link if the saved preview didn't work, or after
     // a pause if YouTube asked for a bot check. The job keeps its slot in the queue meanwhile.
@@ -342,17 +398,27 @@ function runJob(job) {
       job.proc = null;
       job.errors = [];
       job.files = [];
+      job.percent = null;
+      job.solverFailed = false;
+      updateTaskbar();
       later(retry.wait);
       return;
     }
     if (job.infoFile) fs.unlink(job.infoFile, () => {});
 
+    if (status === 'error') {
+      failedOpts.set(id, job.opts); // lets "Try again" repeat it; the half-done .part file in temp is resumed
+      if (failedOpts.size > 20) failedOpts.delete(failedOpts.keys().next().value);
+    }
     send('job:finished', {
       id,
       status,
       files: job.files,
       error: status === 'error' ? (lastError ? lastError.message : `yt-dlp exited with code ${code}`) : null,
       errorCode: status === 'error' && lastError ? lastError.code : null,
+      details: status === 'error'
+        ? health.buildDetails({ appVersion: app.getVersion(), ytdlpVersion: ytdlpVer, url: job.url, code, lines: job.raw })
+        : null,
       skipped: job.playlist ? job.errors.length : 0,
     });
 
@@ -369,12 +435,14 @@ function runJob(job) {
     }
     jobs.delete(id);
     queue.finish(id); // frees the slot and starts the next waiting download
+    updateTaskbar();
   };
 
   job.forceEnd = () => end(-1);
 
   const launch = () => {
     job.cancelWait = null;
+    if (updating) return later(500); // yt-dlp.exe is being replaced: wait a moment
     outBuf.value = '';
     errBuf.value = '';
     let proc;
@@ -391,7 +459,7 @@ function runJob(job) {
     proc.stdout.setEncoding('utf8');
     proc.stderr.setEncoding('utf8');
     proc.stdout.on('data', (d) => { outBuf.value += d; handleChunk(outBuf); });
-    proc.stderr.on('data', (d) => { errBuf.value += d; handleChunk(errBuf); });
+    proc.stderr.on('data', (d) => { errBuf.value += d; handleChunk(errBuf, true); });
 
     proc.on('error', (err) => {
       job.errors.push({ message: `Could not start yt-dlp: ${err.message}`, code: 'startFail' });
@@ -501,6 +569,7 @@ function registerIpc() {
     } catch (err) {
       return { ok: false, error: err.message, code: err.code || null };
     }
+    await waitWhileUpdating();
     return new Promise((resolve) => {
       execFile(
         tools.ytdlpPath,
@@ -508,15 +577,18 @@ function registerIpc() {
         { windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024, env: runEnv() },
         (err, stdout, stderr) => {
           if (err) {
-            const errLine = String(stderr).split(/\r?\n/).reverse().find((l) => l.startsWith('ERROR:'));
-            if (errLine) {
-              const { code, message } = yt.classifyError(errLine.slice(6).trim());
-              resolve({ ok: false, error: message, code });
-            } else if (err.code === 'ENOENT') {
-              resolve({ ok: false, error: 'yt-dlp is missing. Reinstall Grabbit.', code: 'ytdlpMissing' });
-            } else {
-              resolve({ ok: false, error: 'Could not read that link.', code: 'readFail' });
+            const lines = String(stderr).split(/\r?\n/).filter(Boolean);
+            const details = health.buildDetails({ appVersion: app.getVersion(), ytdlpVersion: ytdlpVer, url, code: err.code, lines });
+            const errLine = [...lines].reverse().find((l) => l.startsWith('ERROR:'));
+            let fail;
+            if (errLine) fail = yt.classifyError(errLine.slice(6).trim());
+            else if (err.code === 'ENOENT') fail = { code: 'ytdlpMissing', message: 'yt-dlp is missing. Reinstall Grabbit.' };
+            else fail = { code: 'readFail', message: 'Could not read that link.' };
+            // If YouTube's challenge helper failed, say that instead of yt-dlp's vague wording
+            if (yt.SOLVER_FAIL.test(stderr) && fail.code !== 'bot' && fail.code !== 'ytdlpMissing') {
+              fail = yt.classifyError('challenge solving failed');
             }
+            resolve({ ok: false, error: fail.message, code: fail.code, details });
             return;
           }
           try {
@@ -566,6 +638,19 @@ function registerIpc() {
         outputDir: settings.outputDir,
         tempDir,
       });
+      return { ok: true, ...created };
+    } catch (err) {
+      return { ok: false, error: err.message, code: err.code || null };
+    }
+  });
+
+  ipcMain.handle('yt:retry', (_e, id) => {
+    const opts = failedOpts.get(id);
+    if (!opts) return { ok: false, error: 'Could not try again. Paste the link again.', code: null };
+    try {
+      // today's folder and sign-in settings, in case they changed since
+      const created = createJob({ ...opts, outputDir: settings.outputDir, cookiesBrowser: settings.cookiesBrowser });
+      failedOpts.delete(id);
       return { ok: true, ...created };
     } catch (err) {
       return { ok: false, error: err.message, code: err.code || null };
@@ -679,10 +764,11 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(null);
     loadSettings();
     loadTools();
+    cleanStale(path.join(app.getPath('userData'), 'temp'), 2 * DAY_MS); // leftovers from old crashes or cancels
     registerIpc();
     createWindow();
     // Check for a newer yt-dlp a moment after launch (YouTube changes often)
-    setTimeout(updateYtDlp, 1500);
+    setTimeout(startupYtDlpCheck, 1500);
     // ...and for a newer Grabbit a little later, then every few hours while it stays open
     setTimeout(checkForUpdates, 6000);
     setInterval(checkForUpdates, 6 * 60 * 60 * 1000).unref();
@@ -693,6 +779,8 @@ if (!app.requestSingleInstanceLock()) {
       job.cancelled = true;
       killTree(job.proc);
     }
+    // saved previews are only useful for the next few minutes
+    cleanStale(path.join(app.getPath('userData'), 'temp'), 0, { match: /^info-.*\.json$/ });
   });
 
   app.on('window-all-closed', () => app.quit());

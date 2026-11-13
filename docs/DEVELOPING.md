@@ -2,7 +2,7 @@
 
 Notes for building, packaging and publishing Grabbit. For what the app does, see the [README](../README.md).
 
-## Features (as of v1.1.2)
+## Features (as of v2.0.0)
 
 - MP4 video from 360p up to 4K, with an **Editor-friendly (H.264)** option for Premiere, CapCut and Vegas
 - MP3 audio (128–320 kbps) and lossless WAV

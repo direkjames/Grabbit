@@ -347,6 +347,25 @@ select option:disabled { color: #6b6056; }
   color: var(--muted);
 }
 .statusbar .spacer { flex: 1; }
+.statusbar .warn { color: var(--err); }
+
+/* ---------- "Details" under a failed download or lookup ---------- */
+.details { margin-top: 6px; font-size: 12px; }
+.details-box { margin-top: 6px; }
+.details-box pre {
+  margin: 0 0 6px;
+  padding: 8px;
+  max-height: 150px;
+  overflow: auto;
+  font: 11px/1.4 Consolas, "Cascadia Mono", monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--muted);
+  background: #0f0d0b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  user-select: text;
+}
 
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; border: 2px solid var(--panel); }

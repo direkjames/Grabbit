@@ -5,7 +5,7 @@
 **Paste a link, grab the file.**
 
 ![Status: Shipped](https://img.shields.io/badge/status-shipped-brightgreen)
-![Version 1.1.2](https://img.shields.io/badge/version-1.1.2-ffd500)
+![Version 2.0.0](https://img.shields.io/badge/version-2.0.0-ffd500)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)
 

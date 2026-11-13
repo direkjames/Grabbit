@@ -26,6 +26,8 @@ const DEFAULTS = {
   embedCoverAudio: true,  // cover art in MP3s is what people expect
   embedCoverVideo: false, // off for MP4: some editors read the picture as an extra video track
   cookiesBrowser: '',
+  autoUpdateYtdlp: true, // check for a newer yt-dlp when Grabbit starts
+  ytdlpCheckedAt: 0,     // when that last worked (ms), so it runs at most twice a day
 };
 
 const bool = (v) => v === true || v === false;
@@ -44,6 +46,8 @@ const RULES = {
   embedCoverAudio: bool,
   embedCoverVideo: bool,
   cookiesBrowser: (v) => v === '' || COOKIE_BROWSERS.includes(v),
+  autoUpdateYtdlp: bool,
+  ytdlpCheckedAt: (v) => Number.isFinite(v) && v >= 0,
 };
 
 /** Keep only the allowed keys with valid values; everything else is dropped. */

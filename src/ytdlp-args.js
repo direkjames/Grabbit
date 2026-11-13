@@ -127,6 +127,7 @@ function baseArgs(tools, { url, cookiesBrowser } = {}) {
     '--no-color',
     '--encoding', 'utf-8',
     '--windows-filenames',
+    '--socket-timeout', '30', // a stalled connection fails and is retried (yt-dlp resumes the .part file) instead of hanging
   ];
   if (tools && tools.ffmpegPath) args.push('--ffmpeg-location', tools.ffmpegPath);
   if (tools && tools.denoPath) args.push('--js-runtimes', `deno:${tools.denoPath}`);
@@ -295,6 +296,9 @@ function parseLine(rawLine) {
  * user's language (code is null when we have nothing better than yt-dlp's own text).
  * Site-specific rules come first because their errors are worded generically.
  */
+// yt-dlp's wording when the Deno helper that solves YouTube's challenges fails or is missing
+const SOLVER_FAIL = /challenge solving failed|signature solving failed|supported javascript runtime|challenge solver/i;
+
 const ERROR_RULES = [
   ['noVideo', /No video could be found in this (tweet|post)/i, null, "That post doesn't have a video."],
   ['twitter', /\[twitter/i, /login|log in|sign in|authenticat|nsfw|protected|not available|unavailable|suspended|rate.?limit|age-restricted|guest|403|404|private/i,
@@ -310,6 +314,8 @@ const ERROR_RULES = [
     'Video unavailable. If it plays fine in your browser, click "Update yt-dlp" at the bottom and try again.'],
   ['age', /Sign in to confirm your age|age-restricted/i, null, 'This video is age-restricted and needs a signed-in account.'],
   ['bot', /Sign in to confirm you.?re not a bot/i, null, 'YouTube is asking for a bot check. Wait a bit, then try again.'],
+  ['solver', SOLVER_FAIL, null,
+    'Grabbit\'s YouTube helper didn\'t work, so some formats are missing. Click "Update yt-dlp" at the bottom and try again. If it keeps happening, reinstall Grabbit.'],
   ['members', /members-only|Join this channel/i, null, 'This is a members-only video.'],
   ['notStarted', /live event will begin|Premieres in/i, null, "This video hasn't started yet."],
   ['unsupported', /Unsupported URL/i, null, "That site or link type isn't supported."],
@@ -372,6 +378,7 @@ module.exports = {
   MP3_BITRATES,
   MODES,
   COOKIE_BROWSERS,
+  SOLVER_FAIL,
   GrabError,
   parseTime,
   labelTime,
