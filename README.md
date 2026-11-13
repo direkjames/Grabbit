@@ -43,7 +43,7 @@ Paste a link, pick a format and press **Grab it**. You can download a whole vide
 
 ## Getting started
 
-1. Go to the [Releases page](https://github.com/direkjames/Grabbit/releases) and download the latest file.
+1. Go to the [Releases page](https://github.com/dkByte-Studios/Grabbit/releases) and download the latest file.
    - **Grabbit-Setup** installs the app with desktop and Start menu shortcuts.
    - **Grabbit-Portable** is one file you can run from anywhere, even a USB stick.
 2. Open it. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. It only happens once, because the app is not code-signed.

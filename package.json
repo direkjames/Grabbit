@@ -31,8 +31,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "direkjames",
-        "repo": "grabbit",
+        "owner": "dkByte-Studios",
+        "repo": "Grabbit",
         "releaseType": "release"
       }
     ],
