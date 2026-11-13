@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
+const { sha256, expectedHash } = require('./checksum');
 
 const BIN = path.join(__dirname, '..', 'bin');
 const FORCE = process.argv.includes('--force');
@@ -22,16 +23,21 @@ const DOWNLOADS = [
   {
     name: 'yt-dlp.exe',
     url: 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe',
+    sums: 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS',
+    sumName: 'yt-dlp.exe',
   },
   {
     // JavaScript runtime that yt-dlp needs for YouTube (since late 2025)
     name: 'deno.exe',
     url: 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip',
+    sums: 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip.sha256sum',
+    sumName: 'deno-x86_64-pc-windows-msvc.zip',
     zip: true,
   },
 ];
 
-async function download(url, dest) {
+/** Download `url` into memory and return it as a Buffer. */
+async function download(url) {
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   const total = Number(res.headers.get('content-length')) || 0;
@@ -50,7 +56,20 @@ async function download(url, dest) {
     }
   }
   process.stdout.write('\n');
-  fs.writeFileSync(dest, Buffer.concat(chunks));
+  return Buffer.concat(chunks);
+}
+
+/** Download `item.url` and refuse it unless it matches the publisher's SHA-256. */
+async function downloadVerified(item) {
+  const data = await download(item.url);
+  const res = await fetch(item.sums, { redirect: 'follow' });
+  if (!res.ok) throw new Error(`Could not get the checksum for ${item.name} (HTTP ${res.status})`);
+  const want = expectedHash(await res.text(), item.sumName);
+  if (!want) throw new Error(`The checksum file for ${item.name} has no hash in it`);
+  const got = sha256(data);
+  if (got !== want) throw new Error(`${item.name} does not match its published SHA-256 (got ${got}, expected ${want}). Not using it.`);
+  console.log(`  checksum ok (${got.slice(0, 12)}…)`);
+  return data;
 }
 
 function unzip(zipPath, outDir) {
@@ -83,19 +102,19 @@ async function main() {
     if (item.zip) {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'grabbit-'));
       const zipPath = path.join(tmpDir, 'download.zip');
-      await download(item.url, zipPath);
+      fs.writeFileSync(zipPath, await downloadVerified(item));
       unzip(zipPath, tmpDir);
       fs.copyFileSync(path.join(tmpDir, item.name), finalPath);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } else {
-      await download(item.url, finalPath);
+      fs.writeFileSync(finalPath, await downloadVerified(item));
     }
     console.log(`[grabbit] Saved bin/${item.name}`);
   }
   console.log('[grabbit] Tools ready.');
 }
 
-main().catch((err) => {
+if (require.main === module) main().catch((err) => {
   console.error(`[grabbit] Could not download the tools: ${err.message}`);
   console.error('[grabbit] Check your internet connection, then run: npm run fetch-bins');
   process.exit(1);

@@ -274,3 +274,19 @@ test('X errors get a helpful message and a post without video says so', () => {
   assert.match(yt.classifyError('[twitter] 1: HTTP Error 403: Forbidden').message, /Sign-in help/);
   assert.equal(yt.summarizeInfo({ _type: 'playlist', title: 'Post', entries: [{ id: 1 }, { id: 2 }] }, 'https://x.com/a/status/1').site, 'twitter');
 });
+
+test('YouTube gets a pause between requests, other sites do not', () => {
+  const yt1 = yt.buildInfoArgs({ url: base.url, playlist: false }, tools);
+  assert.equal(after(yt1, '--sleep-requests'), '1');
+  const tt = yt.buildInfoArgs({ url: 'https://www.tiktok.com/@a/video/1', playlist: false }, tools);
+  assert.ok(!tt.includes('--sleep-requests'));
+});
+
+test('a saved preview replaces the link in the download arguments', () => {
+  const withInfo = yt.buildDownloadArgs({ ...base, mode: 'mp4', quality: '720', infoFile: 'C:\t\info.json' }, tools);
+  assert.equal(after(withInfo, '--load-info-json'), 'C:\t\info.json');
+  assert.ok(!withInfo.includes('--'));
+  const plain = yt.buildDownloadArgs({ ...base, mode: 'mp4', quality: '720' }, tools);
+  assert.ok(!plain.includes('--load-info-json'));
+  assert.equal(plain[plain.length - 1], base.url);
+});

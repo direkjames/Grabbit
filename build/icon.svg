@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBF3E8"/><stop offset="1" stop-color="#EBD8C2"/></linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CC7A50"/><stop offset="1" stop-color="#9F4A1E"/></linearGradient>
+  </defs>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#tile)"/>
+  <rect x="10" y="8" width="236" height="110" rx="52" fill="#FFFFFF" opacity="0.1"/>
+  <rect x="5.5" y="5.5" width="245" height="245" rx="56.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="3"/>
+  <ellipse cx="128" cy="218" rx="62" ry="8" fill="#4A1E08" opacity="0.25"/>
+  <g transform="translate(34 28) scale(0.94)">
+    <ellipse cx="70" cy="58" rx="18" ry="48" transform="rotate(-8 70 58)" fill="url(#fur)"/>
+    <ellipse cx="70" cy="62" rx="8" ry="32" transform="rotate(-8 70 62)" fill="#E4B9A0"/>
+    <ellipse cx="130" cy="58" rx="18" ry="48" transform="rotate(8 130 58)" fill="url(#fur)"/>
+    <ellipse cx="130" cy="62" rx="8" ry="32" transform="rotate(8 130 62)" fill="#E4B9A0"/>
+    <ellipse cx="100" cy="132" rx="64" ry="54" fill="url(#fur)"/>
+    <ellipse cx="78" cy="122" rx="6.5" ry="8" fill="#3A2A20"/>
+    <ellipse cx="122" cy="122" rx="6.5" ry="8" fill="#3A2A20"/>
+    <ellipse cx="100" cy="138" rx="6.5" ry="4.5" fill="#C9754A"/>
+    <path d="M100 143 q-1 7 -8 8 M100 143 q1 7 8 8" stroke="#3A2A20" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+  <path d="M128 176v16M121.5 185.5l6.5 6.5 6.5-6.5" stroke="#B8643A" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
