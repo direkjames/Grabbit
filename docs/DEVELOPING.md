@@ -2,7 +2,7 @@
 
 Notes for building, packaging and publishing Grabbit. For what the app does, see the [README](../README.md).
 
-## Features (as of v1.1.2)
+## Features (as of v2.0.0)
 
 - MP4 video from 360p up to 4K, with an **Editor-friendly (H.264)** option for Premiere, CapCut and Vegas
 - MP3 audio (128–320 kbps) and lossless WAV
@@ -17,7 +17,10 @@ Notes for building, packaging and publishing Grabbit. For what the app does, see
 - **Languages:** English, Filipino and Cebuano (and Pirate, for fun)
 - **Built-in How to use guide** (top-right button, or press F1). It opens by itself the first time the app runs
 - **Auto-update** for Grabbit itself through GitHub Releases
-- yt-dlp updates itself on every launch, so the app keeps working when YouTube changes things
+- yt-dlp updates itself quietly at launch (at most twice a day, switchable in Settings) and the footer warns when it is old or the Deno helper is missing
+- **Details** on every download and history item: the video link (Open on YouTube / Copy link), the saved file and, for failures, yt-dlp's own messages
+- **Try again** on failed downloads, automatic retry after a YouTube bot check, download progress on the taskbar button
+- **Light and dark mode** (light by default, a switch in Settings)
 
 Grabbit is a friendly front end for [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org) and [Deno](https://deno.com), which are all bundled inside the app. Your friends don't install anything else.
 
@@ -140,7 +143,14 @@ grabbit/
 ├─ src/settings-schema.js  Which settings exist and what values are allowed
 ├─ src/update-config.js    Your GitHub username/repo for auto-update
 ├─ src/updates.js          Version check used by the Portable version
+├─ src/pacing.js           Waits and retries after a YouTube bot check
+├─ src/health.js           yt-dlp age check and the text under "Details"
+├─ src/applog.js           The small app log (logs\grabbit.log)
+├─ src/json-file.js        Saves settings safely (.bak) and recovers a damaged file
+├─ src/windowstate.js      Remembers the window's size and place
+├─ src/tempclean.js        Clears old half-finished downloads
 ├─ scripts/set-icon.js     Swaps the app icon (npm run icon)
+├─ scripts/checksum.js     Checks yt-dlp and Deno downloads against their SHA-256
 ├─ renderer/               The interface (HTML, CSS, JS)
 │  └─ i18n.js              All the text in English, Filipino, Cebuano and Pirate
 ├─ scripts/fetch-binaries.js  Downloads yt-dlp.exe and deno.exe into bin/
@@ -152,7 +162,23 @@ grabbit/
 ## Where things are saved
 
 - Downloads: `Downloads\Grabbit` by default (change it in the app)
-- Settings, history, the updatable yt-dlp copy and temp files: `%APPDATA%\Grabbit`
+- `%APPDATA%\Grabbit` holds everything else:
+  - `settings.json` (settings and history). Every save keeps the last good copy as `settings.json.bak`. If the file is ever damaged, Grabbit keeps it as `settings.corrupt.json`, uses the backup and writes a line in the log, instead of quietly starting over.
+  - `window.json`: the window's size and place (ignored if that place is now off every screen, for example an unplugged monitor).
+  - `logs\grabbit.log`: a small log of things that went wrong inside the app (a crash, an update that failed, a settings file that could not be read). At most 1 MB plus one older copy, and no links or personal folders in it. If something is odd, this is the first place to look.
+  - `bin\` (the updatable yt-dlp) and `temp\` (half-finished downloads, cleaned after 2 days)
+
+## Safety and hardening (2.0.0)
+
+What was checked and what the app does about it:
+
+- **The window can't reach the computer.** The page runs sandboxed with context isolation, a strict content policy (no inline scripts, no network from the page, no frames, forms or workers), no developer tools in the shipped app, no permissions except copying text, no navigation away, and no extra windows. Every message from the page to the app is checked to come from Grabbit's own page.
+- **Locked-down app file (Electron fuses, set in `package.json` under `build.electronFuses`).** `ELECTRON_RUN_AS_NODE` and `NODE_OPTIONS` do nothing, `--inspect` is off, and the app only loads from its own `app.asar`, which is checked on start-up: a changed byte in the file index or in the code makes it refuse to start. The shipped app also quits at once if started with a remote-debugging switch.
+- **Links and files from outside are untrusted.** A pasted link must be http or https, is passed to yt-dlp as a separate argument after `--` (never through a shell), and every option is checked against a short list. The saved history is cleaned on load.
+- **Build tools are verified.** `npm run fetch-bins` downloads yt-dlp and Deno from their official releases and refuses a file whose SHA-256 does not match the published checksum.
+- **Closing Grabbit stops every download.** Closing the window ends yt-dlp and everything it started (tested). If Grabbit is force-killed, yt-dlp ends by itself as soon as it next writes progress; a half-finished download stays in `temp` so "Try again" can continue it.
+- **Packages.** Run `npm audit --omit=dev` before every release (it should say 0). The remaining advisories are in build tools only (electron-builder's packaging chain) and never ship in the app.
+- **Known limits.** The app is not code-signed, so Windows SmartScreen shows a warning on first run. yt-dlp can fetch its own YouTube helper script from GitHub when needed; that is yt-dlp's official, hash-checked mechanism.
 
 ## Changing the app icon
 
@@ -160,10 +186,12 @@ Grabbit uses one picture in two places, and one command swaps both.
 
 **1. Make the picture.** A **square PNG**, ideally **512×512 or 1024×1024** (256×256 is the minimum). A transparent background is fine. Keep the design simple and bold, because Windows also shows it very small (taskbar, shortcuts). If you have a `.jpg` or `.ico`, open it in an editor (Paint, Photoshop, Canva, Figma...) and export it as PNG. Renaming the file does not work.
 
+The current icon is drawn in `build/icon.svg` (a clay tile with the cream bunny). To change it, edit that file and export it to a 1024×1024 PNG with a transparent background (for example in headless Edge: `msedge --headless=new --default-background-color=00000000 --window-size=1024,1024 --screenshot=icon.png file:///path/to/build/icon.svg`).
+
 **2. Swap it in.** Open the VS Code terminal in the project folder and run:
 
 ```
-npm run icon -- C:\Users\you\Pictures\my-icon.png
+npm run icon -- C:UsersyouPicturesmy-icon.png
 ```
 
 (Tip: after typing `npm run icon -- ` you can drag the picture from File Explorer into the terminal to paste its full path.) The command checks the picture, tells you if something is wrong (not a PNG, not square, too small), and copies it to the two places below.
@@ -176,24 +204,27 @@ npm run icon -- C:\Users\you\Pictures\my-icon.png
 |---|---|
 | `build/icon.png` | The `.exe` files, the installer, desktop and Start menu shortcuts, taskbar and window icon |
 | `renderer/assets/icon.png` | The logo in the top-left corner inside the app (the app rounds its corners itself) |
+| `renderer/assets/bunny.svg` | The little bunny that peeks over the link card (not set by the icon command) |
 
-If you'd rather do it by hand, just replace those two files with your picture, keeping the same names.
+If you'd rather do it by hand, just replace those files with your picture, keeping the same names.
 
 **If Windows still shows the old icon** after you install the new build, that's Windows' icon cache, not Grabbit. Uninstall the old version first, then install the new one. If it persists, restart "Windows Explorer" in Task Manager (or restart the PC).
 
 **To get the new icon to your friends**, bump `"version"` in `package.json` and publish a new release (see "Publishing a new version"). The auto-updater delivers it.
 
-## Changing the colors
+## Changing the colors and fonts
 
-The colors are the first lines of `renderer/styles.css`:
+All the colors are at the top of `renderer/styles.css`, in two blocks: `:root` is **light mode** (the default) and `:root[data-theme="dark"]` is **dark mode** (chosen in Settings → Appearance). Every color has the same name in both blocks, and `npm test` checks that none is missing from either.
 
 ```css
---accent: #ffd500;      /* the main accent: buttons, highlights, progress bars */
---accent-2: #ffe566;    /* a lighter shade of it: hover, links, headings */
---accent-ink: #231c00;  /* the text color on top of the accent (keep it dark for a light accent) */
+--accent: #b85a2a;      /* the main accent: the Grab button, the active tab, progress */
+--accent-2: #9f4a1e;    /* the accent used for links and text */
+--accent-ink: #ffffff;  /* the text color on top of the accent */
 ```
 
-Change those three and restart. Pick a dark `--accent-ink` for a light accent and a light one for a dark accent, so the button text stays readable.
+Change them in both blocks and restart. Keep text readable: a dark `--accent-ink` on a light accent, a light one on a dark accent.
+
+The fonts are **DM Sans** (text) and **Plus Jakarta Sans** (the Grabbit name and headings). They live in `renderer/fonts/` as `.woff2` files and are loaded by `@font-face` at the top of `styles.css`, so the app never needs the internet or installed fonts. Both are free under the SIL Open Font License.
 
 ## Changing or fixing a translation
 

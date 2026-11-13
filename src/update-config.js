@@ -10,11 +10,11 @@
  */
 'use strict';
 
-const PLACEHOLDER = 'direkjames';
+const PLACEHOLDER = 'YOUR-GITHUB-USERNAME';
 
 const config = {
-  owner: PLACEHOLDER,
-  repo: 'grabbit',
+  owner: 'dkByte-Studios',
+  repo: 'Grabbit',
 };
 
 /** False until the owner has been filled in. Auto-update stays off until then. */

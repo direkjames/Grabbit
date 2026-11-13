@@ -77,3 +77,17 @@ test('auto-update stays off until the GitHub username is filled in', () => {
   assert.equal(updateConfig.isConfigured({ owner: 'someone', repo: 'grabbit' }), true);
   assert.equal(updateConfig.releasesUrl({ owner: 'someone', repo: 'grabbit' }), 'https://github.com/someone/grabbit/releases/latest');
 });
+
+test('yt-dlp auto-update settings accept only valid values', () => {
+  assert.deepEqual(sanitizePatch({ autoUpdateYtdlp: false, ytdlpCheckedAt: 1731542400000 }), { autoUpdateYtdlp: false, ytdlpCheckedAt: 1731542400000 });
+  assert.deepEqual(sanitizePatch({ autoUpdateYtdlp: 'yes', ytdlpCheckedAt: -1 }), {});
+  assert.deepEqual(sanitizePatch({ ytdlpCheckedAt: NaN }), {});
+});
+
+test('theme is light or dark, nothing else, and light is the default', () => {
+  assert.equal(DEFAULTS.theme, 'light');
+  assert.deepEqual(sanitizePatch({ theme: 'dark' }), { theme: 'dark' });
+  assert.deepEqual(sanitizePatch({ theme: 'light' }), { theme: 'light' });
+  assert.deepEqual(sanitizePatch({ theme: 'auto' }), {});
+  assert.deepEqual(sanitizePatch({ theme: 1 }), {});
+});
